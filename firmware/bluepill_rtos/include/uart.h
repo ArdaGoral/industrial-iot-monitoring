@@ -15,4 +15,7 @@ void uart_put_uint(uint32_t n);
 void uart2_init(void);
 void uart2_write(const uint8_t *data, size_t len);
 
+/* USART3 (PB11 = RX): sensör modülünden gelen veri, sadece alıcı */
+void uart3_init(void);
+
 #endif /* UART_H */

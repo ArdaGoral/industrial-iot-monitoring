@@ -1,15 +1,16 @@
 /*
- * Faz 2 - Adım 4: Modbus RTU slave
+ * Faz 2 - Adım 5: Modbus RTU slave + sensör hattı
  *
  * Görevler:
- *   task_modbus (öncelik 3): USART2'den gelen istekleri cevaplar
- *   task_sensor (öncelik 2): her 500 ms'de input register'ları günceller
+ *   task_modbus (öncelik 3): USART2'den gelen Modbus isteklerini cevaplar
+ *   task_sensor (öncelik 2): USART3'ten gelen sensör çerçevelerini register'lara yazar,
+ *                            sensör kopmasını ve sıcaklık alarmını izler
  *   task_relay  (öncelik 1): holding register'daki röle komutunu LED'e uygular
  *
  * Veri akışı:
- *   USART2 kesmesi --(kuyruk)--> task_modbus --(mutex)--> register tablosu
- *                                                         ^            |
- *                                          task_sensor ---+            +--> task_relay
+ *   USART3 kesmesi --(kuyruk)--> task_sensor --+
+ *                                              +--(mutex)--> register tablosu --> task_relay
+ *   USART2 kesmesi --(kuyruk)--> task_modbus --+
  */
 #include "stm32f1xx.h"
 #include "FreeRTOS.h"
@@ -18,13 +19,17 @@
 #include "semphr.h"
 #include "uart.h"
 #include "modbus.h"
+#include "sensor_link.h"
 
-#define MB_FRAME_GAP_MS   5     /* 9600 baud'da 3.5 karakter süresi ~4 ms */
-#define RX_QUEUE_LEN      64
+#define MB_FRAME_GAP_MS     5      /* 9600 baud'da 3.5 karakter süresi ~4 ms */
+#define RX_QUEUE_LEN        64
+#define SENSOR_QUEUE_LEN    64
+#define SENSOR_TIMEOUT_MS   2000   /* bu kadar süre çerçeve gelmezse sensör koptu say */
 
 static SemaphoreHandle_t log_mutex;
 static SemaphoreHandle_t regs_mutex;
 static QueueHandle_t     rx_queue;
+static QueueHandle_t     sensor_queue;
 static TaskHandle_t      relay_task;
 static mb_regs_t         regs;
 
@@ -65,6 +70,18 @@ void USART2_IRQHandler(void)
         xQueueSendFromISR(rx_queue, &b, &woken);
     }
     /* Kuyruk bekleyen bir görevi uyandırdıysa, kesmeden çıkınca hemen ona geç */
+    portYIELD_FROM_ISR(woken);
+}
+
+/* Sensör hattı: aynı desen, farklı kuyruk */
+void USART3_IRQHandler(void)
+{
+    BaseType_t woken = pdFALSE;
+
+    if (USART3->SR & USART_SR_RXNE) {
+        uint8_t b = (uint8_t)USART3->DR;
+        xQueueSendFromISR(sensor_queue, &b, &woken);
+    }
     portYIELD_FROM_ISR(woken);
 }
 
@@ -117,23 +134,61 @@ static void task_modbus(void *arg)
 static void task_sensor(void *arg)
 {
     (void)arg;
-    uint32_t n = 0;
-    TickType_t last_wake = xTaskGetTickCount();
+    sl_parser_t parser;
+    uint16_t values[SL_VALUE_COUNT];
+    uint16_t frames = 0;
+    uint32_t reported_crc_errors = 0;
+    int online = 0, alarm = 0;
+    TickType_t last_frame = xTaskGetTickCount();
+
+    sl_init(&parser);
 
     for (;;) {
-        /* Şimdilik basit, değişen değerler. Sonraki adımda bu veri
-         * Python'daki sensör simülatöründen gelecek. */
-        xSemaphoreTake(regs_mutex, portMAX_DELAY);
-        regs.input[MB_IR_VIB_RMS]  = (uint16_t)(360 + n % 8);
-        regs.input[MB_IR_VIB_PEAK] = (uint16_t)(650 + n % 30);
-        regs.input[MB_IR_KURTOSIS] = (uint16_t)(165 + n % 3);
-        regs.input[MB_IR_TEMP]     = (uint16_t)(5480 + (n % 10) * 5);
-        regs.input[MB_IR_CURRENT]  = (uint16_t)(4950 + (n % 11) * 10);
-        regs.input[MB_IR_COUNTER]  = (uint16_t)n;
-        xSemaphoreGive(regs_mutex);
+        uint8_t b;
 
-        n++;
-        xTaskDelayUntil(&last_wake, pdMS_TO_TICKS(500));
+        /* En fazla 100 ms bekle: veri gelmese de kopma kontrolü için uyanalım */
+        if (xQueueReceive(sensor_queue, &b, pdMS_TO_TICKS(100)) == pdPASS &&
+            sl_feed(&parser, b, values)) {
+
+            frames++;
+            last_frame = xTaskGetTickCount();
+
+            xSemaphoreTake(regs_mutex, portMAX_DELAY);
+            for (int i = 0; i < SL_VALUE_COUNT; i++)
+                regs.input[MB_IR_VIB_RMS + i] = values[i];   /* aynı sıra, aynı ölçek */
+            regs.input[MB_IR_COUNTER] = frames;
+
+            int new_alarm = values[MB_IR_TEMP] > regs.holding[MB_HR_TEMP_ALARM];
+            regs.input[MB_IR_STATUS] = (uint16_t)(new_alarm ? MB_ST_TEMP_ALARM : 0);  /* çevrimiçi */
+            xSemaphoreGive(regs_mutex);
+
+            if (!online) {
+                online = 1;
+                log_line("sensor", "baglanti var, cerceve #", frames);
+            }
+            if (new_alarm != alarm) {
+                alarm = new_alarm;
+                log_line("sensor", alarm ? "ALARM! sicaklik x100=" : "alarm bitti, sicaklik x100=",
+                         values[MB_IR_TEMP]);
+            }
+            if (frames % 20 == 0)
+                log_line("sensor", "alinan cerceve=", frames);
+        }
+
+        /* Bozuk çerçeve geldiyse haber ver */
+        if (parser.crc_errors != reported_crc_errors) {
+            reported_crc_errors = parser.crc_errors;
+            log_line("sensor", "bozuk cerceve atildi, toplam=", reported_crc_errors);
+        }
+
+        /* Uzun süre veri gelmediyse sensörü kopuk say */
+        if (online && (xTaskGetTickCount() - last_frame) > pdMS_TO_TICKS(SENSOR_TIMEOUT_MS)) {
+            online = 0;
+            xSemaphoreTake(regs_mutex, portMAX_DELAY);
+            regs.input[MB_IR_STATUS] |= MB_ST_SENSOR_OFFLINE;
+            xSemaphoreGive(regs_mutex);
+            log_line("sensor", "VERI GELMIYOR! son cerceve #", frames);
+        }
     }
 }
 
@@ -174,17 +229,23 @@ int main(void)
 
     log_mutex  = xSemaphoreCreateMutex();
     regs_mutex = xSemaphoreCreateMutex();
-    rx_queue   = xQueueCreate(RX_QUEUE_LEN, sizeof(uint8_t));
-    configASSERT(log_mutex && regs_mutex && rx_queue);
+    rx_queue     = xQueueCreate(RX_QUEUE_LEN, sizeof(uint8_t));
+    sensor_queue = xQueueCreate(SENSOR_QUEUE_LEN, sizeof(uint8_t));
+    configASSERT(log_mutex && regs_mutex && rx_queue && sensor_queue);
 
     regs.holding[MB_HR_RELAY]      = 0;
     regs.holding[MB_HR_TEMP_ALARM] = 7000;     /* 70.00 C */
+    regs.input[MB_IR_STATUS]       = MB_ST_SENSOR_OFFLINE;   /* ilk çerçeve gelene kadar */
 
     /* USART2 kesmesi: önceliği FreeRTOS'un izin verdiği aralıkta olmalı
      * (configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY = 5, sayıca >= 5) */
     uart2_init();
     NVIC_SetPriority(USART2_IRQn, 6);
     NVIC_EnableIRQ(USART2_IRQn);
+
+    uart3_init();
+    NVIC_SetPriority(USART3_IRQn, 6);
+    NVIC_EnableIRQ(USART3_IRQn);
 
     xTaskCreate(task_modbus, "modbus", 256, NULL, 3, NULL);
     xTaskCreate(task_sensor, "sensor", 256, NULL, 2, NULL);

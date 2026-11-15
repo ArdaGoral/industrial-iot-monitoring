@@ -5,3 +5,4 @@ __pycache__/
 firmware/crc16
 .pio/
 firmware/bluepill_rtos/tests/test_modbus
+firmware/bluepill_rtos/tests/test_sensor_link

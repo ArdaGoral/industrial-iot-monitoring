@@ -30,6 +30,7 @@ INPUT_MAP = [
     ("sicaklik (C)", 100),
     ("akim (A)", 1000),
     ("sayac", 1),
+    ("durum bitleri", 1),
 ]
 
 passed = failed = 0
@@ -92,13 +93,17 @@ def pymodbus_tests():
 
     try:
         print("FC04: sensor degerlerini oku")
-        r = call(client.read_input_registers, 0, count=6)
+        r = call(client.read_input_registers, 0, count=7)
         check(not r.isError(), "cevap geldi")
         if not r.isError():
             for (name, scale), raw in zip(INPUT_MAP, r.registers):
                 value = raw if scale == 1 else raw / scale
                 print(f"        {name:<14} {value:>8}   (ham {raw})")
-            check(5400 <= r.registers[3] <= 5600, "sicaklik makul aralikta")
+            status = r.registers[6]
+            check(not status & 0x01, "sensor cevrimici (sensor_feeder.py calisiyor mu?)")
+            check(2000 <= r.registers[3] <= 12000, "sicaklik 20-120 C araliginda")
+            if status & 0x02:
+                print("        ! sicaklik alarmi aktif")
 
         print("FC04: sayac artiyor mu (heartbeat)")
         a = call(client.read_input_registers, 5, count=1).registers[0]
@@ -118,7 +123,7 @@ def pymodbus_tests():
         call(client.write_register, 0, 0)
 
         print("Istisnalar")
-        r = call(client.read_input_registers, 4, count=5)
+        r = call(client.read_input_registers, 4, count=10)
         check(r.isError() and getattr(r, "exception_code", None) == 2,
               "tablo disi okuma -> istisna 02")
         r = call(client.write_register, 0, 5)

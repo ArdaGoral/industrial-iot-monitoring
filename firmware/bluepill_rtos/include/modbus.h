@@ -23,8 +23,13 @@ enum {
     MB_IR_TEMP,            /* C x 100  */
     MB_IR_CURRENT,         /* A x 1000 */
     MB_IR_COUNTER,         /* her ölçümde artar (heartbeat) */
+    MB_IR_STATUS,          /* durum bitleri, aşağıda */
     MB_INPUT_COUNT
 };
+
+/* MB_IR_STATUS bitleri */
+#define MB_ST_SENSOR_OFFLINE  (1u << 0)   /* sensörden 2 sn'dir veri gelmiyor */
+#define MB_ST_TEMP_ALARM      (1u << 1)   /* sıcaklık alarm eşiğinin üstünde */
 
 /* Holding register'lar (FC03 oku, FC06 yaz) - ayarlar ve komutlar */
 enum {

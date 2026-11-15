@@ -12,6 +12,10 @@ showAnalyzer sysbus.usart1 Antmicro.Renode.Analyzers.LoggingUartAnalyzer
 emulation CreateServerSocketTerminal 3456 "modbus" false
 connector Connect sysbus.usart2 modbus
 
+# USART3: sensor hatti. Python sensor simulatoru TCP 3457 portundan veri gonderir.
+emulation CreateServerSocketTerminal 3457 "sensor" false
+connector Connect sysbus.usart3 sensor
+
 $bin?=@/Users/ardagoral/industrial-iot-monitoring/firmware/bluepill_rtos/.pio/build/bluepill_f103c8/firmware.elf
 sysbus LoadELF $bin
 

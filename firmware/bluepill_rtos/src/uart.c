@@ -67,3 +67,19 @@ void uart2_write(const uint8_t *data, size_t len)
     }
     while (!(USART2->SR & USART_SR_TC)) { }    /* son bayt da tamamen çıksın */
 }
+
+/* ---------------- USART3: sensör hattı ---------------- */
+
+void uart3_init(void)
+{
+    RCC->APB2ENR |= RCC_APB2ENR_IOPBEN;
+    RCC->APB1ENR |= RCC_APB1ENR_USART3EN;
+
+    /* PB11 (RX): giriş, floating -> 0x4 (CRH bit 12..15). Sıfırlamadaki değer
+     * zaten bu, ama varsayıma güvenmek yerine açıkça yazıyoruz. */
+    GPIOB->CRH &= ~(0xFUL << 12);
+    GPIOB->CRH |=  (0x4UL << 12);
+
+    USART3->BRR = UART_CLOCK_HZ / LOG_BAUD;    /* 115200: sensör modülleri genelde hızlıdır */
+    USART3->CR1 = USART_CR1_UE | USART_CR1_RE | USART_CR1_RXNEIE;
+}
