@@ -1,0 +1,13 @@
+:name: Blue Pill FreeRTOS
+:description: Sanal STM32F103 uzerinde FreeRTOS
+
+using sysbus
+mach create "bluepill"
+machine LoadPlatformDescription @/Users/ardagoral/bitirme/firmware/bluepill_rtos/bluepill.repl
+
+showAnalyzer sysbus.usart1 Antmicro.Renode.Analyzers.LoggingUartAnalyzer
+
+$bin?=@/Users/ardagoral/bitirme/firmware/bluepill_rtos/.pio/build/bluepill_f103c8/firmware.elf
+sysbus LoadELF $bin
+
+start

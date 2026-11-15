@@ -1,0 +1,4 @@
+using "platforms/cpus/stm32f103.repl"
+
+nvic:
+    systickFrequency: 8000000

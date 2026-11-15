@@ -1,0 +1,17 @@
+{
+  "name": "freertos",
+  "version": "11.1.0",
+  "description": "FreeRTOS çekirdeği: sadece ihtiyacımız olan dosyalar derlenir",
+  "build": {
+    "srcDir": "FreeRTOS-Kernel",
+    "includeDir": "FreeRTOS-Kernel/include",
+    "srcFilter": [
+      "-<*>",
+      "+<tasks.c>",
+      "+<queue.c>",
+      "+<list.c>",
+      "+<portable/GCC/ARM_CM3/port.c>",
+      "+<portable/MemMang/heap_4.c>"
+    ]
+  }
+}
