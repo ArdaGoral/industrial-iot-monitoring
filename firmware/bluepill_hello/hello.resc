@@ -8,7 +8,7 @@ machine LoadPlatformDescription @platforms/cpus/stm32f103.repl
 # USART1'den gelen her satırı Renode konsoluna yazdır
 showAnalyzer sysbus.usart1 Antmicro.Renode.Analyzers.LoggingUartAnalyzer
 
-$bin?=@/Users/ardagoral/bitirme/firmware/bluepill_hello/.pio/build/bluepill_f103c8/firmware.elf
+$bin?=@/Users/ardagoral/industrial-iot-monitoring/firmware/bluepill_hello/.pio/build/bluepill_f103c8/firmware.elf
 sysbus LoadELF $bin
 
 start
