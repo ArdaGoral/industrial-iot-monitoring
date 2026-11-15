@@ -6,3 +6,7 @@ firmware/crc16
 .pio/
 firmware/bluepill_rtos/tests/test_modbus
 firmware/bluepill_rtos/tests/test_sensor_link
+firmware/esp32_gateway/build/
+firmware/esp32_gateway/managed_components/
+firmware/esp32_gateway/sdkconfig
+firmware/esp32_gateway/sdkconfig.old
