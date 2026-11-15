@@ -96,7 +96,8 @@ def pymodbus_tests():
         check(not r.isError(), "cevap geldi")
         if not r.isError():
             for (name, scale), raw in zip(INPUT_MAP, r.registers):
-                print(f"        {name:<14} {raw / scale:>8}   (ham {raw})")
+                value = raw if scale == 1 else raw / scale
+                print(f"        {name:<14} {value:>8}   (ham {raw})")
             check(5400 <= r.registers[3] <= 5600, "sicaklik makul aralikta")
 
         print("FC04: sayac artiyor mu (heartbeat)")

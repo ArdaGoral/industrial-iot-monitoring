@@ -25,6 +25,7 @@
 static SemaphoreHandle_t log_mutex;
 static SemaphoreHandle_t regs_mutex;
 static QueueHandle_t     rx_queue;
+static TaskHandle_t      relay_task;
 static mb_regs_t         regs;
 
 /* ---------------- yardımcılar ---------------- */
@@ -103,6 +104,8 @@ static void task_modbus(void *arg)
         /* 4) Cevap varsa gönder */
         if (m > 0) {
             uart2_write(tx, m);
+            /* Başarılı bir yazma olduysa röle görevini hemen uyandır */
+            if (tx[1] == 0x06) xTaskNotifyGive(relay_task);
             if (tx[1] & 0x80) log_line("modbus", "istisna cevabi, kod=", tx[2]);
             else              log_line("modbus", "cevap verildi, FC=", tx[1]);
         } else {
@@ -150,7 +153,10 @@ static void task_relay(void *arg)
             log_line("role", "durum=", cmd);
             last = cmd;
         }
-        vTaskDelay(pdMS_TO_TICKS(100));
+        /* Uyu, Modbus görevi yeni bir komut yazınca uyandırsın.
+         * Önceden 100 ms'de bir bakıyorduk (polling) ve kısa süreli
+         * komutları kaçırıyorduk. */
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     }
 }
 
@@ -182,7 +188,7 @@ int main(void)
 
     xTaskCreate(task_modbus, "modbus", 256, NULL, 3, NULL);
     xTaskCreate(task_sensor, "sensor", 256, NULL, 2, NULL);
-    xTaskCreate(task_relay,  "role",   256, NULL, 1, NULL);
+    xTaskCreate(task_relay,  "role",   256, NULL, 1, &relay_task);
 
     uart_puts("Bos heap: ");
     uart_put_uint((uint32_t)xPortGetFreeHeapSize());
