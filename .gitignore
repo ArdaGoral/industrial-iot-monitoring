@@ -4,3 +4,4 @@ __pycache__/
 *.csv
 firmware/crc16
 .pio/
+firmware/bluepill_rtos/tests/test_modbus
