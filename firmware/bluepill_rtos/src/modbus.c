@@ -74,6 +74,10 @@ static size_t write_single(uint8_t slave_id, const uint8_t *req, mb_regs_t *regs
         return exception(slave_id, 0x06, MB_EX_ILLEGAL_ADDRESS, resp);
     if (addr == MB_HR_RELAY && value > 1)
         return exception(slave_id, 0x06, MB_EX_ILLEGAL_VALUE, resp);
+    /* Koruma kilidi: motor aşırı ısındığı için PLC röleyi düşürdü. Uzaktan gelen
+     * bir komut bu kararı geçersiz kılamaz; motor soğuyana kadar reddet. */
+    if (addr == MB_HR_RELAY && value == 1 && regs->relay_locked)
+        return exception(slave_id, 0x06, MB_EX_DEVICE_FAILURE, resp);
 
     regs->holding[addr] = value;
 

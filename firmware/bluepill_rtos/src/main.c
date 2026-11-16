@@ -1,10 +1,12 @@
 /*
- * Faz 2 - Adım 5: Modbus RTU slave + sensör hattı
+ * Modbus RTU slave + sensör hattı + koruma kilidi (interlock)
  *
  * Görevler:
  *   task_modbus (öncelik 3): USART2'den gelen Modbus isteklerini cevaplar
  *   task_sensor (öncelik 2): USART3'ten gelen sensör çerçevelerini register'lara yazar,
- *                            sensör kopmasını ve sıcaklık alarmını izler
+ *                            sensör kopmasını ve sıcaklık alarmını izler,
+ *                            aşırı sıcaklıkta röleyi kendisi düşürür (interlock),
+ *                            her çerçeveye röle durumuyla cevap verir
  *   task_relay  (öncelik 1): holding register'daki röle komutunu LED'e uygular
  *
  * Veri akışı:
@@ -25,6 +27,19 @@
 #define RX_QUEUE_LEN        64
 #define SENSOR_QUEUE_LEN    64
 #define SENSOR_TIMEOUT_MS   2000   /* bu kadar süre çerçeve gelmezse sensör koptu say */
+
+/* Koruma kilidi (interlock) eşikleri, C x 100.
+ * Alarm eşiği (holding register 1) operatöre "dikkat" der ve uzaktan değiştirilebilir.
+ * Kilit eşiği ise motoru korur: kodda sabit, ağdan DEĞİŞTİRİLEMEZ. Ağ koptuğunda,
+ * dashboard kapalıyken ya da biri yanlış bir eşik gönderdiğinde de çalışmalı.
+ * Kilit açılma eşiği daha düşük (histerezis): 90'da düşen röle, 89.9'da
+ * hemen tekrar açılabilir olmasın; motor gerçekten soğusun. */
+#define TRIP_TEMP_X100      9000   /* 90.00 C: röleyi düşür */
+#define RESET_TEMP_X100     8000   /* 80.00 C: altına inince yeniden enerjilendirmeye izin ver */
+
+/* Röle durumu sensör modülüne bu aralıkla da gönderilir (ölçüm gelmese bile).
+ * Böylece yeni bağlanan modül, ilk ölçümünü göndermeden motorun durumunu öğrenir. */
+#define STATUS_PERIOD_MS    200
 
 static SemaphoreHandle_t log_mutex;
 static SemaphoreHandle_t regs_mutex;
@@ -138,7 +153,9 @@ static void task_sensor(void *arg)
     uint16_t values[SL_VALUE_COUNT];
     uint16_t frames = 0;
     uint32_t reported_crc_errors = 0;
-    int online = 0, alarm = 0;
+    int online = 0, alarm = 0, locked = 0;
+    uint8_t status_frame[SL_STATUS_LEN];
+    TickType_t last_status = 0;
     TickType_t last_frame = xTaskGetTickCount();
 
     sl_init(&parser);
@@ -159,8 +176,37 @@ static void task_sensor(void *arg)
             regs.input[MB_IR_COUNTER] = frames;
 
             int new_alarm = values[MB_IR_TEMP] > regs.holding[MB_HR_TEMP_ALARM];
-            regs.input[MB_IR_STATUS] = (uint16_t)(new_alarm ? MB_ST_TEMP_ALARM : 0);  /* çevrimiçi */
+
+            /* Koruma kilidi */
+            int tripped_now = 0, released_now = 0;
+            if (!locked && values[MB_IR_TEMP] >= TRIP_TEMP_X100) {
+                locked = 1;
+                tripped_now = 1;
+                regs.relay_locked = 1;
+                regs.holding[MB_HR_RELAY] = 0;         /* motoru durdur */
+            } else if (locked && values[MB_IR_TEMP] < RESET_TEMP_X100) {
+                locked = 0;
+                released_now = 1;
+                regs.relay_locked = 0;                 /* röle kendiliğinden AÇILMAZ: operatör karar verir */
+            }
+
+            uint16_t st = 0;                           /* çevrimiçi */
+            if (new_alarm) st |= MB_ST_TEMP_ALARM;
+            if (locked)    st |= MB_ST_INTERLOCK;
+            regs.input[MB_IR_STATUS] = st;
+
+            /* Sensör modülüne (simülatördeki motora) röle durumunu bildir */
+            sl_encode_status((uint8_t)regs.holding[MB_HR_RELAY], (uint8_t)st, status_frame);
             xSemaphoreGive(regs_mutex);
+            uart3_write(status_frame, SL_STATUS_LEN);
+            last_status = xTaskGetTickCount();
+
+            if (tripped_now) {
+                xTaskNotifyGive(relay_task);           /* LED/röle hemen bıraksın */
+                log_line("sensor", "KORUMA KILIDI! role dusuruldu, sicaklik x100=", values[MB_IR_TEMP]);
+            }
+            if (released_now)
+                log_line("sensor", "kilit acildi (motor sogudu), sicaklik x100=", values[MB_IR_TEMP]);
 
             if (!online) {
                 online = 1;
@@ -173,6 +219,16 @@ static void task_sensor(void *arg)
             }
             if (frames % 20 == 0)
                 log_line("sensor", "alinan cerceve=", frames);
+        }
+
+        /* Ölçüm gelmese de röle durumunu düzenli bildir */
+        if ((xTaskGetTickCount() - last_status) >= pdMS_TO_TICKS(STATUS_PERIOD_MS)) {
+            xSemaphoreTake(regs_mutex, portMAX_DELAY);
+            sl_encode_status((uint8_t)regs.holding[MB_HR_RELAY],
+                             (uint8_t)regs.input[MB_IR_STATUS], status_frame);
+            xSemaphoreGive(regs_mutex);
+            uart3_write(status_frame, SL_STATUS_LEN);
+            last_status = xTaskGetTickCount();
         }
 
         /* Bozuk çerçeve geldiyse haber ver */
@@ -233,6 +289,8 @@ int main(void)
     sensor_queue = xQueueCreate(SENSOR_QUEUE_LEN, sizeof(uint8_t));
     configASSERT(log_mutex && regs_mutex && rx_queue && sensor_queue);
 
+    /* Röle enerjisiz başlar: elektrik kesilip geri geldiğinde motor kendiliğinden
+     * kalkmamalı (yeniden yol alma koruması). Operatör bilerek enerjilendirir. */
     regs.holding[MB_HR_RELAY]      = 0;
     regs.holding[MB_HR_TEMP_ALARM] = 7000;     /* 70.00 C */
     regs.input[MB_IR_STATUS]       = MB_ST_SENSOR_OFFLINE;   /* ilk çerçeve gelene kadar */

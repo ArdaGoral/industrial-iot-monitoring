@@ -88,6 +88,24 @@ int main(void)
     m = mb_process(1, req, n, &regs, resp);
     CHECK(m == 5 && resp[2] == MB_EX_ILLEGAL_ADDRESS, "olmayan register'a yazma reddedildi");
 
+    printf("Koruma kilidi (interlock)\n");
+    regs.holding[MB_HR_RELAY] = 0;
+    regs.relay_locked = 1;                         /* PLC aşırı sıcaklıkta kilitledi */
+    n = make_request(req, 1, 0x06, MB_HR_RELAY, 1);
+    m = mb_process(1, req, n, &regs, resp);
+    CHECK(m == 5 && resp[1] == 0x86 && resp[2] == MB_EX_DEVICE_FAILURE, "kilitliyken enerjilendirme reddedildi (04)");
+    CHECK(regs.holding[MB_HR_RELAY] == 0, "role enerjisiz kaldi");
+    n = make_request(req, 1, 0x06, MB_HR_RELAY, 0);
+    m = mb_process(1, req, n, &regs, resp);
+    CHECK(m == 8, "kilitliyken birakma komutu kabul (guvenli yon)");
+    n = make_request(req, 1, 0x06, MB_HR_TEMP_ALARM, 6500);
+    m = mb_process(1, req, n, &regs, resp);
+    CHECK(m == 8 && regs.holding[MB_HR_TEMP_ALARM] == 6500, "kilitliyken alarm esigi degisebilir");
+    regs.relay_locked = 0;
+    n = make_request(req, 1, 0x06, MB_HR_RELAY, 1);
+    m = mb_process(1, req, n, &regs, resp);
+    CHECK(m == 8 && regs.holding[MB_HR_RELAY] == 1, "kilit acilinca enerjilendirme kabul");
+
     printf("Desteklenmeyen fonksiyon\n");
     n = make_request(req, 1, 0x10, 0, 1);
     m = mb_process(1, req, n, &regs, resp);

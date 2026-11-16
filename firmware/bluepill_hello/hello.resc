@@ -1,6 +1,9 @@
 :name: Blue Pill hello
 :description: Sanal STM32F103 üzerinde ilk program
 
+# $ORIGIN = bu .resc dosyasının bulunduğu klasör: proje hangi bilgisayarda,
+# hangi klasörde olursa olsun yollar doğru çözülür.
+
 using sysbus
 mach create "bluepill"
 machine LoadPlatformDescription @platforms/cpus/stm32f103.repl
@@ -8,7 +11,7 @@ machine LoadPlatformDescription @platforms/cpus/stm32f103.repl
 # USART1'den gelen her satırı Renode konsoluna yazdır
 showAnalyzer sysbus.usart1 Antmicro.Renode.Analyzers.LoggingUartAnalyzer
 
-$bin?=@/Users/ardagoral/industrial-iot-monitoring/firmware/bluepill_hello/.pio/build/bluepill_f103c8/firmware.elf
+$bin?=$ORIGIN/.pio/build/bluepill_f103c8/firmware.elf
 sysbus LoadELF $bin
 
 start

@@ -44,6 +44,7 @@ class MqttBridge:
         self.client.on_message = self._on_message
         self.client.reconnect_delay_set(min_delay=1, max_delay=10)
         self.stats = {"received": 0, "rejected": 0}
+        self.motor_started_at: float | None = None     # motor en son ne zaman kalktı
 
     def start(self):
         # connect_async: broker henüz hazır değilse de çökmez, arka planda dener
@@ -57,6 +58,29 @@ class MqttBridge:
     def publish_command(self, name: str, payload: str) -> bool:
         info = self.client.publish(f"{TOPIC_CMD}/{name}", payload, qos=1)
         return info.rc == mqtt.MQTT_ERR_SUCCESS
+
+    def _anomaly_status(self, data: dict, now: float) -> str:
+        """
+        Bu ölçüm anomali modeline sorulmalı mı? Model sadece "motor normal
+        şartlarda dönüyor" durumunu öğrendi; diğer durumlarda skor anlamsız.
+          no_model        model dosyası yok
+          sensor_offline  değer bayat (PLC son ölçümü tekrarlıyor)
+          motor_stopped   röle enerjisiz, motor duruyor
+          startup         motor yeni kalktı, ısınıyor (STARTUP_INHIBIT_S)
+          active          skorlanıyor
+        """
+        if not self.detector.ready:
+            return "no_model"
+        if not data["sensor_online"]:
+            return "sensor_offline"
+        if data["relay"] != 1:
+            self.motor_started_at = None
+            return "motor_stopped"
+        if self.motor_started_at is None:
+            self.motor_started_at = now
+        if now - self.motor_started_at < config.STARTUP_INHIBIT_S:
+            return "startup"
+        return "active"
 
     # ---------- paho geri çağrıları (MQTT iş parçacığında çalışır) ----------
 
@@ -94,14 +118,15 @@ class MqttBridge:
                 data = parse_telemetry(msg.payload)
                 # Bayat değeri (sensör kopuk) skorlamak anlamsız: model eski bir ölçümü
                 # tekrar tekrar görüp "normal" ya da "anomali" demeye devam ederdi.
-                if data["sensor_online"]:
+                anomaly, anomaly_status = None, self._anomaly_status(data, now)
+                if anomaly_status == "active":
                     anomaly = self.detector.score(data)
                 else:
                     self.detector.reset()
-                    anomaly = None
-                state.set_telemetry(data, now, anomaly)
+                state.set_telemetry(data, now, anomaly, anomaly_status)
                 self.storage.write_telemetry(data, at, anomaly["score"] if anomaly else None)
-                self._emit({"type": "telemetry", "time": at.isoformat(), "data": data, "anomaly": anomaly})
+                self._emit({"type": "telemetry", "time": at.isoformat(), "data": data,
+                            "anomaly": anomaly, "anomaly_status": anomaly_status})
 
                 if anomaly and anomaly["event"]:
                     started = anomaly["event"] == "start"

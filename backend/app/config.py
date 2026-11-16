@@ -13,3 +13,8 @@ INFLUX_TOKEN = os.getenv("INFLUX_TOKEN", "dev-token-degistir")
 
 # Bu kadar süre telemetri gelmezse veri "bayat" sayılır
 STALE_AFTER_S = float(os.getenv("STALE_AFTER_S", "5"))
+
+# Motor kalktıktan sonra bu süre anomali skorlanmaz (yol alma bastırması).
+# Uzun duruştan sonra motor soğuk kalkar; ısınana kadar sıcaklık "normal"in
+# altındadır. Bu bir arıza değil, beklenen bir geçici durumdur.
+STARTUP_INHIBIT_S = float(os.getenv("STARTUP_INHIBIT_S", "30"))

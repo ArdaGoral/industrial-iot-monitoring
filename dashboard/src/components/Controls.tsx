@@ -41,7 +41,11 @@ export function Controls({ telemetry, enabled, disabledReason, lastEvent, onLog 
     if (!pending || !lastEvent || lastEvent.cmd !== pending.cmd) return;
     if (Date.parse(lastEvent.time) < pending.since - 2000) return;    // eski olay
     const ok = lastEvent.result === "ok";
-    const text = ok ? `${pending.label}: uygulandı` : `${pending.label}: ${lastEvent.result}`;
+    // Modbus istisna 04: PLC isteği anladı ama şu an yerine getiremiyor (koruma kilidi)
+    const why = lastEvent.exception === 4 ? "PLC reddetti, koruma kilidi devrede"
+              : lastEvent.exception ? `PLC reddetti (Modbus istisna ${lastEvent.exception})`
+              : lastEvent.result;
+    const text = ok ? `${pending.label}: uygulandı` : `${pending.label}: ${why}`;
     setOutcome({ ok, text });
     onLog(ok ? "info" : "warn", text);
     setPending(null);
@@ -74,6 +78,7 @@ export function Controls({ telemetry, enabled, disabledReason, lastEvent, onLog 
   }
 
   const relayOn = telemetry?.relay === 1;
+  const locked = telemetry?.interlock === true;
   const busy = pending != null;
   const disabled = !enabled || busy;
 
@@ -97,12 +102,13 @@ export function Controls({ telemetry, enabled, disabledReason, lastEvent, onLog 
       <div className="control-row">
         <div>
           <div className="control-label">Röle (motor kontaktörü)</div>
-          <div className={`relay-state ${relayOn ? "on" : ""}`}>
-            {telemetry == null ? "—" : relayOn ? "ENERJİLİ" : "ENERJİSİZ"}
+          <div className={`relay-state ${locked ? "locked" : relayOn ? "on" : ""}`}>
+            {telemetry == null ? "—" : locked ? "KİLİTLİ" : relayOn ? "ENERJİLİ" : "ENERJİSİZ"}
           </div>
         </div>
         <div className="btn-group">
-          <button disabled={disabled || relayOn}
+          <button disabled={disabled || relayOn || locked}
+                  title={locked ? "Koruma kilidi: motor 80 °C'nin altına soğuyana kadar enerjilendirilemez" : undefined}
                   onClick={() => run("relay", "Röle enerjilendir", () => sendRelay(true))}>
             Enerjilendir
           </button>

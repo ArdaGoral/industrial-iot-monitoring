@@ -68,3 +68,15 @@ size_t sl_encode(const uint16_t values[SL_VALUE_COUNT], uint8_t out[SL_FRAME_LEN
     out[SL_FRAME_LEN - 1] = (uint8_t)(crc >> 8);
     return SL_FRAME_LEN;
 }
+
+size_t sl_encode_status(uint8_t relay, uint8_t flags, uint8_t out[SL_STATUS_LEN])
+{
+    out[0] = SL_HEADER0;
+    out[1] = SL_STATUS_HEADER1;
+    out[2] = relay;
+    out[3] = flags;
+    uint16_t crc = mb_crc16(out, 4);
+    out[4] = (uint8_t)(crc & 0xFF);
+    out[5] = (uint8_t)(crc >> 8);
+    return SL_STATUS_LEN;
+}

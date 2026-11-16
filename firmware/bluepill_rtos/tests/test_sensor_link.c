@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "sensor_link.h"
+#include "modbus.h"        /* mb_crc16, durum bitleri */
 
 static int failures = 0;
 
@@ -69,6 +70,18 @@ int main(void)
         CHECK(feed_all(&p, bad, n, out) == 0, "bozuk cerceve kabul edilmedi");
         CHECK(p.crc_errors == 1, "CRC hatasi sayildi");
         CHECK(feed_all(&p, frame, n, out) == 1, "ardindan gelen saglam cerceve cozuldu");
+    }
+
+    printf("Durum cercevesi (PLC -> sensor modulu)\n");
+    {
+        uint8_t st[SL_STATUS_LEN];
+        CHECK(sl_encode_status(1, MB_ST_INTERLOCK, st) == 6, "6 bayt");
+        CHECK(st[0] == 0xAA && st[1] == 0x66 && st[2] == 1 && st[3] == 0x04, "baslik, role, bitler");
+        uint16_t c = mb_crc16(st, 4);
+        CHECK(st[4] == (uint8_t)c && st[5] == (uint8_t)(c >> 8), "CRC kucuk bayt once");
+        /* Olcum cozucusu durum cercevesini olcum sanmamali (AA 66 != AA 55) */
+        sl_init(&p);
+        CHECK(feed_all(&p, st, sizeof(st), out) == 0, "olcum cozucusu durum cercevesini yok sayar");
     }
 
     printf("\n%s (%d hata)\n", failures ? "BASARISIZ" : "TUM TESTLER GECTI", failures);

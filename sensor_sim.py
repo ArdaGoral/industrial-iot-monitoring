@@ -28,6 +28,7 @@ MODES = ["normal", "bearing", "imbalance", "overheating"]
 
 COLD_TEMP = 40.0       # soğuk motor sıcaklığı (°C)
 STEADY_TEMP = 55.0     # normal çalışmada oturduğu sıcaklık (°C)
+AMBIENT_TEMP = 25.0    # motor dururken soğuyacağı ortam sıcaklığı (°C)
 
 
 class MotorSimulator:
@@ -63,8 +64,18 @@ class MotorSimulator:
         self.t0 += WINDOW_S
         return sig
 
-    def read_window(self, mode="normal", severity=0.0):
-        """Bir pencere için özet sensör değerleri döndürür."""
+    def read_window(self, mode="normal", severity=0.0, running=True):
+        """
+        Bir pencere için özet sensör değerleri döndürür.
+
+        running=False: kontaktör enerjisiz, motor duruyor. Dönüş yok, titreşim
+        sadece sensör gürültüsü, akım ~0 ve motor ortam sıcaklığına doğru yavaşça
+        soğur (ısınmadan ~20 kat yavaş: gövdenin ısıl kütlesi büyük).
+        Arıza (mode/severity) motor dönmediği için etkisini göstermez.
+        """
+        if not running:
+            return self._stopped_window()
+
         sig = self._vibration(mode, severity)
 
         # Özellik çıkarımı (feature extraction)
@@ -94,6 +105,20 @@ class MotorSimulator:
             "vib_kurtosis": round(kurt, 4),
             "temp_c": round(self.temp, 2),
             "current_a": round(float(current), 3),
+        }
+
+
+    def _stopped_window(self):
+        sig = self.rng.normal(0, 0.01, int(FS * WINDOW_S))      # sadece sensör gürültüsü
+        self.t0 += WINDOW_S
+        m, s = sig.mean(), sig.std()
+        self.temp += (AMBIENT_TEMP - self.temp) * 0.005 + self.rng.normal(0, 0.05)
+        return {
+            "vib_rms": round(float(np.sqrt(np.mean(sig ** 2))), 4),
+            "vib_peak": round(float(np.max(np.abs(sig))), 4),
+            "vib_kurtosis": round(float(np.mean(((sig - m) / s) ** 4)), 4),
+            "temp_c": round(self.temp, 2),
+            "current_a": round(abs(float(self.rng.normal(0, 0.02))), 3),
         }
 
 

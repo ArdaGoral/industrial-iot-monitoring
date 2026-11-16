@@ -18,15 +18,18 @@ class SystemState:
         self.telemetry: dict | None = None
         self.telemetry_at: float | None = None      # backend'in aldığı zaman (unix sn)
         self.anomaly: dict | None = None
+        self.anomaly_status: str = "no_data"
         self.heartbeat: dict | None = None
         self.gateway_status: str = "unknown"
         self.plc_status: str = "unknown"
         self.mqtt_connected: bool = False
         self.events: deque = deque(maxlen=50)
 
-    def set_telemetry(self, data: dict, at: float, anomaly: dict | None = None):
+    def set_telemetry(self, data: dict, at: float, anomaly: dict | None = None,
+                      anomaly_status: str = "active"):
         with self._lock:
             self.telemetry, self.telemetry_at, self.anomaly = data, at, anomaly
+            self.anomaly_status = anomaly_status
 
     def set_heartbeat(self, data: dict):
         with self._lock:
@@ -54,6 +57,7 @@ class SystemState:
                 # Hiç veri yoksa ya da son veri çok eskiyse bayat say
                 "telemetry_stale": age is None or age > config.STALE_AFTER_S,
                 "anomaly": self.anomaly,
+                "anomaly_status": self.anomaly_status,
                 "heartbeat": self.heartbeat,
                 "events": list(self.events)[:10],
             }

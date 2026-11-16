@@ -18,6 +18,12 @@ Durdurmak için Ctrl+C. Durdurunca cihaz 2 sn sonra "VERI GELMIYOR" demeli.
 
 v2: Ölçüm, gönderim anında üretiliyor (tek saat). Önceki sürümde ölçüm ayrı bir
 thread'de üretildiği için iki saat kayıyor, bazen aynı ölçüm iki kez gidiyordu.
+
+v3: Kapalı döngü. PLC her çerçeveye röle durumunu içeren 6 baytlık bir çerçeveyle
+cevap veriyor (AA 66 | röle | durum bitleri | CRC). Röle enerjisizse simülatördeki
+motor durur: akım ~0, titreşim sadece gürültü, sıcaklık ortama doğru düşer.
+Arızanın ilerlemesi (--degrade) de motor dururken bekler.
+PLC açılışta röleyi enerjisiz başlatır: motoru dashboard'dan "Enerjilendir" ile kaldır.
 """
 
 import argparse
@@ -34,6 +40,8 @@ from live_sensor import to_input_registers  # noqa: E402
 from sensor_sim import MODES, STEADY_TEMP, MotorSimulator  # noqa: E402
 
 HOST, PORT = "127.0.0.1", 3457
+LEGACY_WAIT_S = 3.0          # bu sürede PLC'den durum gelmezse eski firmware say
+ST_INTERLOCK = 0x04          # firmware'deki MB_ST_INTERLOCK
 
 
 def crc16(data: bytes) -> int:
@@ -43,6 +51,32 @@ def crc16(data: bytes) -> int:
         for _ in range(8):
             crc = (crc >> 1) ^ 0xA001 if crc & 1 else crc >> 1
     return crc
+
+
+class StatusReader:
+    """PLC'den gelen AA 66 | röle | bitler | CRC(LE) çerçevelerini çözer."""
+
+    def __init__(self):
+        self.buf = bytearray()
+        self.relay = None        # henüz durum gelmedi
+        self.flags = 0
+
+    def feed(self, data: bytes):
+        self.buf += data
+        while len(self.buf) >= 6:
+            i = self.buf.find(b"\xAA\x66")
+            if i < 0:
+                del self.buf[:-1]           # son bayt bir başlığın yarısı olabilir
+                return
+            del self.buf[:i]
+            if len(self.buf) < 6:
+                return
+            frame = bytes(self.buf[:6])
+            if crc16(frame[:4]) == struct.unpack("<H", frame[4:6])[0]:
+                self.relay, self.flags = frame[2], frame[3]
+                del self.buf[:6]
+            else:
+                del self.buf[:1]            # yanlış başlangıç: bir bayt kaydır ve ara
 
 
 def encode(values) -> bytes:
@@ -67,19 +101,62 @@ def main():
     except OSError:
         print(f"{HOST}:{PORT} adresine baglanilamadi. Renode calisiyor ve rtos.resc yuklendi mi?")
         raise SystemExit(1)
+    # Bağlandıktan sonra zaman aşımını kaldır: okumayı MSG_DONTWAIT ile beklemeden yapıyoruz
+    sock.settimeout(None)
 
     sim = MotorSimulator(seed=args.seed, start_temp=args.start_temp)
     severity = 0.0 if args.mode == "normal" else args.severity
+    status = StatusReader()
+    started = time.monotonic()
+    legacy = False               # PLC durum göndermiyorsa motoru hep çalışıyor say
+    last_relay, last_locked = None, False
 
-    print(f"Gonderiliyor: mod={args.mode}  (Ctrl+C ile dur)\n")
-    print(f"{'#':>5}  {'mod':<11}{'sev':>5}  {'rms':>6} {'kurt':>7} {'sicaklik':>8} {'akim':>6}")
+    # İlk ölçümden önce PLC'nin röle durumunu öğren (PLC 200 ms'de bir gönderir).
+    # Öğrenmeden başlarsak ilk ölçüm motorun gerçek durumuyla çelişebilir.
+    deadline = time.monotonic() + LEGACY_WAIT_S
+    while status.relay is None and time.monotonic() < deadline:
+        try:
+            data = sock.recv(256, socket.MSG_DONTWAIT)
+            if not data:
+                raise SystemExit("Renode baglantiyi kapatti.")
+            status.feed(data)
+        except (BlockingIOError, InterruptedError):
+            time.sleep(0.05)
+
+    print(f"Gonderiliyor: mod={args.mode}  (Ctrl+C ile dur)")
+    print("Motor, PLC'nin rolesi enerjiliyken doner. Dashboard'dan 'Enerjilendir' ile kaldir.\n")
+    print(f"{'#':>5}  {'mod':<11}{'sev':>5}  {'rms':>6} {'kurt':>7} {'sicaklik':>8} {'akim':>6}  motor")
 
     n = 0
     next_time = time.monotonic()
     try:
         while True:
+            # PLC'den gelen durum çerçevelerini oku (beklemeden)
+            try:
+                while True:
+                    data = sock.recv(256, socket.MSG_DONTWAIT)
+                    if not data:
+                        raise ConnectionResetError
+                    status.feed(data)
+            except (BlockingIOError, InterruptedError):
+                pass
+
+            if status.relay is None and not legacy and time.monotonic() - started > 2 * LEGACY_WAIT_S:
+                legacy = True
+                print("  !! PLC'den role durumu gelmiyor (eski firmware?). Motor surekli calisiyor sayiliyor.")
+
+            running = legacy or status.relay == 1
+            locked = bool(status.flags & ST_INTERLOCK)
+            if status.relay is not None and status.relay != last_relay:
+                print(f"  -> role {'ENERJILI: motor kalkiyor' if status.relay else 'ENERJISIZ: motor duruyor'}")
+                last_relay = status.relay
+            if locked != last_locked:
+                print("  !! PLC KORUMA KILIDI: asiri sicaklik, role dusuruldu" if locked
+                      else "  -> koruma kilidi acildi (motor sogudu)")
+                last_locked = locked
+
             # Ölçümü tam gönderim anında üret: tek saat, tekrar ya da atlama yok
-            reading = sim.read_window(args.mode, severity)
+            reading = sim.read_window(args.mode, severity, running=running)
             values = to_input_registers(reading, 0)[:5]
             frame = bytearray(encode(values))
 
@@ -92,9 +169,11 @@ def main():
             n += 1
             print(f"{n:>5}  {args.mode:<11}{severity:>5.2f}  "
                   f"{reading['vib_rms']:>6} {reading['vib_kurtosis']:>7} "
-                  f"{reading['temp_c']:>8} {reading['current_a']:>6}{note}")
+                  f"{reading['temp_c']:>8} {reading['current_a']:>6}  "
+                  f"{'doner' if running else 'DURUYOR'}{note}")
 
-            if args.degrade and args.mode != "normal":
+            # Arıza sadece motor dönerken ilerler
+            if args.degrade and args.mode != "normal" and running:
                 severity = min(1.0, severity + args.degrade)
 
             # Bir sonraki ölçüm zamanına kadar bekle. "Şimdiden itibaren 0.5 sn"

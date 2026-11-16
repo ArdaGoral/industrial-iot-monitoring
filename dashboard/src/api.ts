@@ -22,7 +22,12 @@ export interface Telemetry {
   temp_alarm: boolean;
   relay: number;
   temp_alarm_limit_c: number;
+  /** PLC koruma kilidi: aşırı sıcaklıkta röleyi kendisi düşürdü (eski firmware'de yok) */
+  interlock?: boolean;
 }
+
+/** Ölçüm modele soruldu mu, sorulmadıysa neden */
+export type AnomalyStatus = "active" | "startup" | "motor_stopped" | "sensor_offline" | "no_model" | "no_data";
 
 export interface Heartbeat {
   uptime_s: number;
@@ -57,6 +62,7 @@ export interface Snapshot {
   plc_status: LinkStatus;
   telemetry: Telemetry | null;
   anomaly: Anomaly | null;
+  anomaly_status: AnomalyStatus;
   heartbeat: Heartbeat | null;
   events: CommandEvent[];
 }
@@ -124,6 +130,7 @@ const EMPTY: Snapshot = {
   plc_status: "unknown",
   telemetry: null,
   anomaly: null,
+  anomaly_status: "no_data",
   heartbeat: null,
   events: [],
 };
@@ -223,6 +230,7 @@ export function useLiveData(rangeMinutes: number): LiveData {
               plc_status: s.plc_status,
               telemetry: s.telemetry,
               anomaly: s.anomaly ?? null,
+              anomaly_status: s.anomaly_status ?? "no_data",
               heartbeat: s.heartbeat,
               events: s.events ?? [],
             });
@@ -234,7 +242,8 @@ export function useLiveData(rangeMinutes: number): LiveData {
             const d: Telemetry = msg.data;
             const t = Date.parse(msg.time);
             const a: Anomaly | null = msg.anomaly ?? null;
-            setSnap((s) => ({ ...s, telemetry: d, anomaly: a }));
+            setSnap((s) => ({ ...s, telemetry: d, anomaly: a,
+                              anomaly_status: msg.anomaly_status ?? (a ? "active" : "no_data") }));
             setLastTelemetryAt(Date.now());
             // Sensör kopukken gelen değerler eski ölçümün tekrarı: grafiğe ekleme
             if (!d.sensor_online) break;

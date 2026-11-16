@@ -1,9 +1,12 @@
 :name: Blue Pill Modbus
 :description: Sanal STM32F103 uzerinde FreeRTOS + Modbus RTU slave
 
+# $ORIGIN = bu .resc dosyasının bulunduğu klasör: proje hangi bilgisayarda,
+# hangi klasörde olursa olsun yollar doğru çözülür.
+
 using sysbus
 mach create "bluepill"
-machine LoadPlatformDescription @/Users/ardagoral/industrial-iot-monitoring/firmware/bluepill_rtos/bluepill.repl
+machine LoadPlatformDescription $ORIGIN/bluepill.repl
 
 # USART1: log satirlarini Renode konsoluna yaz
 showAnalyzer sysbus.usart1 Antmicro.Renode.Analyzers.LoggingUartAnalyzer
@@ -12,11 +15,12 @@ showAnalyzer sysbus.usart1 Antmicro.Renode.Analyzers.LoggingUartAnalyzer
 emulation CreateServerSocketTerminal 3456 "modbus" false
 connector Connect sysbus.usart2 modbus
 
-# USART3: sensor hatti. Python sensor simulatoru TCP 3457 portundan veri gonderir.
+# USART3: sensor hatti (iki yonlu). Python sensor simulatoru TCP 3457 portundan
+# olcum gonderir, PLC ayni porttan role durumunu geri yollar.
 emulation CreateServerSocketTerminal 3457 "sensor" false
 connector Connect sysbus.usart3 sensor
 
-$bin?=@/Users/ardagoral/industrial-iot-monitoring/firmware/bluepill_rtos/.pio/build/bluepill_f103c8/firmware.elf
+$bin?=$ORIGIN/.pio/build/bluepill_f103c8/firmware.elf
 sysbus LoadELF $bin
 
 start

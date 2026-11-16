@@ -36,4 +36,17 @@ int sl_feed(sl_parser_t *p, uint8_t byte, uint16_t values[SL_VALUE_COUNT]);
 /* Değerlerden çerçeve üretir (testlerde ve formatın belgesi olarak) */
 size_t sl_encode(const uint16_t values[SL_VALUE_COUNT], uint8_t out[SL_FRAME_LEN]);
 
+/*
+ * Ters yön: PLC -> sensör/motor modülü durum çerçevesi (6 bayt)
+ *   AA 66 | röle (0/1) | durum bitleri (MB_IR_STATUS'un alt baytı) | CRC-16 (küçük bayt önce)
+ *
+ * Gerçek bir sahada kontaktör motoru doğrudan keser; bizde "motor" simülatörün
+ * içinde olduğu için röle durumunu ona bu çerçeveyle bildiriyoruz.
+ * PLC her sensör çerçevesine bir durum çerçevesiyle cevap verir.
+ */
+#define SL_STATUS_HEADER1  0x66
+#define SL_STATUS_LEN      6
+
+size_t sl_encode_status(uint8_t relay, uint8_t flags, uint8_t out[SL_STATUS_LEN]);
+
 #endif /* SENSOR_LINK_H */

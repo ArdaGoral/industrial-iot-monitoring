@@ -57,6 +57,7 @@ enum { IR_VIB_RMS, IR_VIB_PEAK, IR_KURTOSIS, IR_TEMP, IR_CURRENT, IR_COUNTER, IR
 enum { HR_RELAY, HR_TEMP_ALARM, HR_COUNT };
 #define ST_SENSOR_OFFLINE   0x01
 #define ST_TEMP_ALARM       0x02
+#define ST_INTERLOCK        0x04     /* PLC koruma kilidi: aşırı sıcaklıkta röleyi düşürdü */
 
 /* ---------------- komut kuyruğu ---------------- */
 
@@ -207,18 +208,19 @@ static void poll_slave(int *fail_count)
     }
 
     /* Ham register'ları gerçek birimlere çevirip JSON yap */
-    char json[320];
+    char json[384];
     snprintf(json, sizeof(json),
              "{\"ts_ms\":%" PRId64 ","
              "\"vib_rms\":%.3f,\"vib_peak\":%.3f,\"kurtosis\":%.2f,"
              "\"temp_c\":%.2f,\"current_a\":%.3f,\"counter\":%u,"
-             "\"sensor_online\":%s,\"temp_alarm\":%s,"
+             "\"sensor_online\":%s,\"temp_alarm\":%s,\"interlock\":%s,"
              "\"relay\":%u,\"temp_alarm_limit_c\":%.2f}",
              esp_timer_get_time() / 1000,
              ir[IR_VIB_RMS] / 1000.0, ir[IR_VIB_PEAK] / 1000.0, ir[IR_KURTOSIS] / 100.0,
              ir[IR_TEMP] / 100.0, ir[IR_CURRENT] / 1000.0, (unsigned)ir[IR_COUNTER],
              (ir[IR_STATUS] & ST_SENSOR_OFFLINE) ? "false" : "true",
              (ir[IR_STATUS] & ST_TEMP_ALARM) ? "true" : "false",
+             (ir[IR_STATUS] & ST_INTERLOCK) ? "true" : "false",
              (unsigned)hr[HR_RELAY], hr[HR_TEMP_ALARM] / 100.0);
     publish(TOPIC_TELEMETRY, json, 0, 0);
 }

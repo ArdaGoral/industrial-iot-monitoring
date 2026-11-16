@@ -59,6 +59,15 @@ class TelemetryTests(unittest.TestCase):
         with self.assertRaises(InvalidMessage):
             parse_telemetry(json.dumps(data))
 
+    def test_interlock_opsiyonel(self):
+        self.assertIs(parse_telemetry(REAL)["interlock"], False)      # eski firmware
+        data = json.loads(REAL)
+        data["interlock"] = True
+        self.assertIs(parse_telemetry(json.dumps(data))["interlock"], True)
+        data["interlock"] = 1
+        with self.assertRaises(InvalidMessage):
+            parse_telemetry(json.dumps(data))
+
     def test_heartbeat(self):
         hb = parse_heartbeat(b'{"uptime_s":21,"free_heap":255244,"modbus_ok":21,"modbus_err":0}')
         self.assertEqual(hb["modbus_ok"], 21)

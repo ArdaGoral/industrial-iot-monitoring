@@ -67,12 +67,20 @@ export default function App() {
       PLC: plcStatus,
       Sensör: t ? (sensorOnline ? "online" : "offline") : "unknown",
       Sıcaklık: t ? (t.temp_alarm ? "alarm" : "normal") : "unknown",
+      Kilit: t ? (t.interlock ? "on" : "off") : "unknown",
+      Motor: t ? (t.relay === 1 ? "run" : "stop") : "unknown",
     };
     for (const [k, v] of Object.entries(cur)) {
       const p = prev.current[k];
       // İlk yükleme (unknown -> x) günlüğe yazılmaz; sadece gerçek değişiklikler
       if (p !== undefined && p !== "unknown" && p !== v && v !== "unknown") {
-        if (k === "Sıcaklık")
+        if (k === "Kilit")
+          addLog(v === "on" ? "alarm" : "info",
+                 v === "on" ? `KORUMA KİLİDİ: sıcaklık 90 °C eşiğine ulaştı, PLC motoru durdurdu`
+                            : "Koruma kilidi açıldı, motor soğudu (< 80 °C). Yeniden enerjilendirilebilir.");
+        else if (k === "Motor")
+          addLog("info", v === "run" ? "Motor çalışıyor (röle enerjili)" : "Motor durdu (röle enerjisiz)");
+        else if (k === "Sıcaklık")
           addLog(v === "alarm" ? "alarm" : "info",
                  v === "alarm" ? `Sıcaklık alarmı: ${t!.temp_c.toFixed(1)} °C ≥ ${t!.temp_alarm_limit_c.toFixed(1)} °C`
                                : "Sıcaklık normale döndü");
@@ -117,6 +125,14 @@ export default function App() {
         <div className="clock num">{new Date(now).toLocaleTimeString("tr-TR")}</div>
       </header>
 
+      {t?.interlock && !valuesStale && (
+        <div className="banner alarm">
+          <strong>Koruma kilidi:</strong> sıcaklık 90 °C'yi aştığı için PLC röleyi kendisi düşürdü ve motor
+          duruyor. Motor 80 °C'nin altına soğuyunca yeniden enerjilendirilebilir. Bu karar sahada,
+          PLC'de verildi; ağ ya da dashboard kapalı olsa da çalışır.
+        </div>
+      )}
+
       {snap.anomaly?.is_anomaly && !valuesStale && (
         <div className="banner alarm">
           <strong>Anomali:</strong> motorun davranışı öğrenilen normalden sapıyor. Baskın etken:{" "}
@@ -136,7 +152,10 @@ export default function App() {
       <section className="kpis">
         <Kpi label="Anomali skoru" value={snap.anomaly?.score} unit="" digits={2} stale={valuesStale}
              alarm={snap.anomaly?.is_anomaly}
-             note={!snap.anomaly ? "model yok ya da veri yok"
+             note={snap.anomaly_status === "motor_stopped" ? "motor duruyor · skorlanmıyor"
+                   : snap.anomaly_status === "startup" ? "motor yeni kalktı · 30 sn ısınma bekleniyor"
+                   : snap.anomaly_status === "no_model" ? "model yüklü değil"
+                   : !snap.anomaly ? "veri yok"
                    : snap.anomaly.score > 1 ? `baskın: ${snap.anomaly.top_feature_tr} (${snap.anomaly.top_z > 0 ? "+" : ""}${snap.anomaly.top_z}σ)`
                    : "eşik 1.00 · normal davranış"} />
         <Kpi label="Sıcaklık" value={t?.temp_c} unit="°C" digits={1} stale={valuesStale}

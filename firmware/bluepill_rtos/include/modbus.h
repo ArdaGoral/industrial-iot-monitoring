@@ -30,10 +30,11 @@ enum {
 /* MB_IR_STATUS bitleri */
 #define MB_ST_SENSOR_OFFLINE  (1u << 0)   /* sensörden 2 sn'dir veri gelmiyor */
 #define MB_ST_TEMP_ALARM      (1u << 1)   /* sıcaklık alarm eşiğinin üstünde */
+#define MB_ST_INTERLOCK       (1u << 2)   /* koruma kilidi: aşırı sıcaklıkta röle zorla bırakıldı */
 
 /* Holding register'lar (FC03 oku, FC06 yaz) - ayarlar ve komutlar */
 enum {
-    MB_HR_RELAY = 0,       /* 0 = kapalı, 1 = açık (LED ile gösteriliyor) */
+    MB_HR_RELAY = 0,       /* motor kontaktörü: 0 = enerjisiz (motor durur), 1 = enerjili */
     MB_HR_TEMP_ALARM,      /* sıcaklık alarm eşiği, C x 100 */
     MB_HOLDING_COUNT
 };
@@ -42,12 +43,17 @@ enum {
 enum {
     MB_EX_ILLEGAL_FUNCTION = 0x01,
     MB_EX_ILLEGAL_ADDRESS  = 0x02,
-    MB_EX_ILLEGAL_VALUE    = 0x03
+    MB_EX_ILLEGAL_VALUE    = 0x03,
+    MB_EX_DEVICE_FAILURE   = 0x04     /* istek geçerli ama cihaz şu an yerine getiremiyor */
 };
 
 typedef struct {
     uint16_t input[MB_INPUT_COUNT];
     uint16_t holding[MB_HOLDING_COUNT];
+    /* Koruma kilidi devredeyken röleyi enerjilendirme isteği reddedilir.
+     * Bu bayrak Modbus'tan okunamaz/yazılamaz: kilidi sadece PLC'nin kendisi
+     * (sıcaklığa bakarak) açıp kapatır. */
+    uint8_t  relay_locked;
 } mb_regs_t;
 
 uint16_t mb_crc16(const uint8_t *data, size_t len);

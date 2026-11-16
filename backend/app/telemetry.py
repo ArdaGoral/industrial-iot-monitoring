@@ -22,6 +22,11 @@ TELEMETRY_FIELDS = {
     "temp_alarm_limit_c": float,
 }
 
+# Sonradan eklenen alanlar: eski firmware göndermese de mesaj kabul edilir
+OPTIONAL_TELEMETRY_FIELDS = {
+    "interlock": (bool, False),      # PLC koruma kilidi devrede mi
+}
+
 # Grafiklerde gösterilecek, ortalaması alınabilen sayısal alanlar
 NUMERIC_FIELDS = ["vib_rms", "vib_peak", "kurtosis", "temp_c", "current_a"]
 
@@ -67,7 +72,11 @@ def _parse_object(payload: bytes | str, fields: dict) -> dict:
 
 
 def parse_telemetry(payload: bytes | str) -> dict:
-    return _parse_object(payload, TELEMETRY_FIELDS)
+    out = _parse_object(payload, TELEMETRY_FIELDS)
+    raw = json.loads(payload)
+    for name, (typ, default) in OPTIONAL_TELEMETRY_FIELDS.items():
+        out[name] = _coerce(name, raw[name], typ) if name in raw else default
+    return out
 
 
 def parse_heartbeat(payload: bytes | str) -> dict:

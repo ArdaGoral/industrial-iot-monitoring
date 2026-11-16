@@ -110,3 +110,4 @@ class AnomalyDetector:
     def reset(self):
         """Sensör kopunca çağrılır: kopukluk öncesi sayaçlar sonrasına taşınmasın."""
         self._above = self._below = 0
+        self.active = False
