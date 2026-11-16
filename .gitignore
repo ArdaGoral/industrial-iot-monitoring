@@ -14,3 +14,4 @@ firmware/esp32_gateway/tests/test_master_vs_slave
 .env
 node_modules/
 dist/
+.vscode/
