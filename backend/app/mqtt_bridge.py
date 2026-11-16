@@ -1,0 +1,121 @@
+"""
+MQTT köprüsü: gateway'in yayınladıklarını dinler, InfluxDB'ye yazar,
+son durumu günceller ve WebSocket istemcilerine iletir. Dashboard'dan
+gelen komutları da MQTT'ye yayınlar.
+
+paho-mqtt kendi iş parçacığında (thread) çalışır, FastAPI ise asyncio ile.
+İkisi arasında köprü: loop.call_soon_threadsafe ile asyncio kuyruğuna mesaj atmak.
+"""
+import asyncio
+import logging
+import time
+from datetime import datetime, timezone
+
+import paho.mqtt.client as mqtt
+
+from . import config
+from .state import state
+from .storage import Storage
+from .telemetry import (InvalidMessage, parse_event, parse_heartbeat,
+                        parse_status, parse_telemetry)
+
+log = logging.getLogger("mqtt")
+
+T = config.TOPIC_BASE
+TOPIC_TELEMETRY = f"{T}/telemetry"
+TOPIC_HEARTBEAT = f"{T}/gateway/heartbeat"
+TOPIC_GW_STATUS = f"{T}/gateway/status"
+TOPIC_PLC_STATUS = f"{T}/plc/status"
+TOPIC_EVENT = f"{T}/event"
+TOPIC_CMD = f"{T}/cmd"
+
+
+class MqttBridge:
+    def __init__(self, storage: Storage, loop: asyncio.AbstractEventLoop, outbox: asyncio.Queue):
+        self.storage = storage
+        self.loop = loop
+        self.outbox = outbox            # WebSocket yayıncısının okuduğu kuyruk
+        self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="iiot-backend")
+        self.client.on_connect = self._on_connect
+        self.client.on_disconnect = self._on_disconnect
+        self.client.on_message = self._on_message
+        self.client.reconnect_delay_set(min_delay=1, max_delay=10)
+        self.stats = {"received": 0, "rejected": 0}
+
+    def start(self):
+        # connect_async: broker henüz hazır değilse de çökmez, arka planda dener
+        self.client.connect_async(config.MQTT_HOST, config.MQTT_PORT, keepalive=30)
+        self.client.loop_start()
+
+    def stop(self):
+        self.client.loop_stop()
+        self.client.disconnect()
+
+    def publish_command(self, name: str, payload: str) -> bool:
+        info = self.client.publish(f"{TOPIC_CMD}/{name}", payload, qos=1)
+        return info.rc == mqtt.MQTT_ERR_SUCCESS
+
+    # ---------- paho geri çağrıları (MQTT iş parçacığında çalışır) ----------
+
+    def _put(self, msg: dict):
+        try:
+            self.outbox.put_nowait(msg)
+        except asyncio.QueueFull:           # yayıncı yetişemiyorsa eski canlı veriyi bırak
+            pass
+
+    def _emit(self, msg: dict):
+        self.loop.call_soon_threadsafe(self._put, msg)
+
+    def _on_connect(self, client, userdata, flags, reason_code, properties):
+        if reason_code.is_failure:
+            log.warning("Broker baglantisi reddedildi: %s", reason_code)
+            return
+        log.info("Broker'a baglandi: %s:%s", config.MQTT_HOST, config.MQTT_PORT)
+        state.mqtt_connected = True
+        # cmd/# 'e abone OLMUYORUZ: kendi gönderdiğimiz komutları geri almak istemiyoruz
+        for topic in (TOPIC_TELEMETRY, TOPIC_HEARTBEAT, TOPIC_GW_STATUS, TOPIC_PLC_STATUS, TOPIC_EVENT):
+            client.subscribe(topic, qos=1)
+        self._emit({"type": "backend", "mqtt_connected": True})
+
+    def _on_disconnect(self, client, userdata, flags, reason_code, properties):
+        log.warning("Broker baglantisi koptu: %s", reason_code)
+        state.mqtt_connected = False
+        self._emit({"type": "backend", "mqtt_connected": False})
+
+    def _on_message(self, client, userdata, msg):
+        now = time.time()
+        at = datetime.fromtimestamp(now, tz=timezone.utc)
+        self.stats["received"] += 1
+        try:
+            if msg.topic == TOPIC_TELEMETRY:
+                data = parse_telemetry(msg.payload)
+                state.set_telemetry(data, now)
+                self.storage.write_telemetry(data, at)
+                self._emit({"type": "telemetry", "time": at.isoformat(), "data": data})
+
+            elif msg.topic == TOPIC_HEARTBEAT:
+                data = parse_heartbeat(msg.payload)
+                state.set_heartbeat(data)
+                self.storage.write_heartbeat(data, at)
+                self._emit({"type": "heartbeat", "data": data})
+
+            elif msg.topic in (TOPIC_GW_STATUS, TOPIC_PLC_STATUS):
+                which = "gateway" if msg.topic == TOPIC_GW_STATUS else "plc"
+                value = parse_status(msg.payload)
+                state.set_status(which, value)
+                # Retained mesaj eski bir durumdur: DB'ye "şimdi oldu" diye yazmayalım
+                if not msg.retain:
+                    self.storage.write_status(which, value, at)
+                self._emit({"type": "status", "component": which, "value": value})
+                log.info("%s durumu: %s%s", which, value, " (retained)" if msg.retain else "")
+
+            elif msg.topic == TOPIC_EVENT:
+                data = parse_event(msg.payload)
+                data["time"] = at.isoformat()
+                state.add_event(data)
+                self.storage.write_event(data, at)
+                self._emit({"type": "event", "data": data})
+
+        except InvalidMessage as e:
+            self.stats["rejected"] += 1
+            log.warning("Gecersiz mesaj (%s): %s", msg.topic, e)
