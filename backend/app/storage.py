@@ -35,8 +35,13 @@ class Storage:
 
     def write_telemetry(self, data: dict, at: datetime):
         p = Point("telemetry").tag("device", config.DEVICE).time(at, WritePrecision.MS)
+        # Sensör kopukken PLC son okunan değeri tekrarlar. Bunlar yeni ölçüm değil;
+        # kaydedersek grafikte sahte bir düz çizgi ve ML için sahte veri olur.
+        # Bu durumda sadece durum alanlarını yazıyoruz, ölçüm alanlarını değil.
+        skip = set(NUMERIC_FIELDS) if not data.get("sensor_online", True) else set()
         for k, v in data.items():
-            p = p.field(k, v)
+            if k not in skip:
+                p = p.field(k, v)
         self._write(p)
 
     def write_heartbeat(self, data: dict, at: datetime):

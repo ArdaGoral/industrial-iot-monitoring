@@ -24,6 +24,9 @@ interface Props {
   rangeMinutes: number;
   now: number;
   threshold?: { value: number; label: string } | null;
+  /** Y ekseninin en az kapsayacağı aralık. Yoksa ölçümdeki küçük yuvarlama
+   *  farkları (1.66 / 1.67) bütün grafiği kaplar ve gürültü arıza gibi görünür. */
+  minSpan?: number;
 }
 
 const H = 180;
@@ -44,7 +47,7 @@ const hhmm = (t: number, withSec: boolean) =>
     hour: "2-digit", minute: "2-digit", ...(withSec ? { second: "2-digit" } : {}),
   });
 
-export function TrendChart({ title, unit, series, points, rangeMinutes, now, threshold }: Props) {
+export function TrendChart({ title, unit, series, points, rangeMinutes, now, threshold, minSpan = 0 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(600);
   const [hoverX, setHoverX] = useState<number | null>(null);
@@ -68,10 +71,14 @@ export function TrendChart({ title, unit, series, points, rangeMinutes, now, thr
     if (threshold) vals.push(threshold.value);
     if (!vals.length) return [0, 1];
     let lo = Math.min(...vals), hi = Math.max(...vals);
+    if (hi - lo < minSpan) {
+      const mid = (hi + lo) / 2;
+      lo = mid - minSpan / 2; hi = mid + minSpan / 2;
+    }
     const pad = (hi - lo) * 0.15 || Math.abs(hi) * 0.05 || 1;
     lo -= pad; hi += pad;
     return [lo, hi];
-  }, [visible, series, threshold]);
+  }, [visible, series, threshold, minSpan]);
 
   const iw = width - PAD.l - PAD.r;
   const ih = H - PAD.t - PAD.b;

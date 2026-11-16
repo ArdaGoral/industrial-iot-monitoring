@@ -222,6 +222,8 @@ export function useLiveData(rangeMinutes: number): LiveData {
             const t = Date.parse(msg.time);
             setSnap((s) => ({ ...s, telemetry: d }));
             setLastTelemetryAt(Date.now());
+            // Sensör kopukken gelen değerler eski ölçümün tekrarı: grafiğe ekleme
+            if (!d.sensor_online) break;
             setPoints((p) => {
               const cutoff = Date.now() - rangeRef.current * 60_000;
               const next = p.length && p[0].t < cutoff ? p.filter((x) => x.t >= cutoff) : p;

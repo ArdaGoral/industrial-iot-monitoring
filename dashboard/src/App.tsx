@@ -147,19 +147,19 @@ export default function App() {
             {live.historyError && <span className="hint warn">Geçmiş alınamadı: {live.historyError}</span>}
           </div>
 
-          <TrendChart title="Sıcaklık" unit="°C" points={live.points} rangeMinutes={range} now={now}
+          <TrendChart title="Sıcaklık" unit="°C" minSpan={10} points={live.points} rangeMinutes={range} now={now}
                       series={[{ key: "temp_c", label: "Sargı", color: "var(--trend-1)", digits: 2 }]}
                       threshold={t ? { value: t.temp_alarm_limit_c, label: `alarm ${t.temp_alarm_limit_c.toFixed(0)} °C` } : null} />
-          <TrendChart title="Titreşim" unit="g" points={live.points} rangeMinutes={range} now={now}
+          <TrendChart title="Titreşim" unit="g" minSpan={1} points={live.points} rangeMinutes={range} now={now}
                       series={[
                         { key: "vib_rms", label: "RMS", color: "var(--trend-1)", digits: 3 },
                         { key: "vib_peak", label: "Tepe", color: "var(--trend-2)", digits: 3 },
                       ]} />
-          <TrendChart title="Akım ve kurtosis" unit="" points={live.points} rangeMinutes={range} now={now}
-                      series={[
-                        { key: "current_a", label: "Akım (A)", color: "var(--trend-1)", digits: 2 },
-                        { key: "kurtosis", label: "Kurtosis", color: "var(--trend-2)", digits: 2 },
-                      ]} />
+          {/* Kurtosis ayrı grafikte: akımla aynı eksende düz çizgi gibi görünüp kayboluyordu */}
+          <TrendChart title="Kurtosis" unit="" minSpan={4} points={live.points} rangeMinutes={range} now={now}
+                      series={[{ key: "kurtosis", label: "Kurtosis", color: "var(--trend-1)", digits: 2 }]} />
+          <TrendChart title="Motor akımı" unit="A" minSpan={2} points={live.points} rangeMinutes={range} now={now}
+                      series={[{ key: "current_a", label: "Faz akımı", color: "var(--trend-1)", digits: 2 }]} />
         </div>
 
         <aside className="side">
