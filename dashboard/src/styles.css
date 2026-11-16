@@ -1,0 +1,145 @@
+/*
+ * Görsel dil: ISA-101 "yüksek performanslı HMI".
+ * - Zemin ve normal değerler nötr gri; renk SADECE anormal durum için.
+ * - Kırmızı = alarm/kopukluk, amber = uyarı/bayat veri. Yeşil "her şey yolunda"
+ *   rengi bilerek yok: normal durum dikkat çekmemeli.
+ * - Rakamlar sabit genişlikli (tabular): değer değişince yazı zıplamasın.
+ */
+:root {
+  --bg: #1b1d20;
+  --panel: #23262a;
+  --panel-2: #2a2e33;
+  --line: #363b41;
+  --grid: #2f3439;
+  --fg: #d7dade;
+  --fg-dim: #8b9198;
+  --fg-faint: #5d636a;
+  --trend-1: #a9b8c8;
+  --trend-2: #6f87a3;
+  --alarm: #e5484d;
+  --alarm-bg: #3b1d1f;
+  --warn: #e0a33a;
+  --warn-bg: #3a2f1a;
+  --accent: #8fb4d9;
+  --radius: 6px;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--sans); }
+h1, h3 { margin: 0; font-weight: 600; }
+button, input { font: inherit; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+.app { max-width: 1440px; margin: 0 auto; padding: 16px max(16px, env(safe-area-inset-left)) 32px; }
+
+/* ---------- üst çubuk ---------- */
+.topbar { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; padding-bottom: 14px;
+          border-bottom: 1px solid var(--line); }
+.title h1 { font-size: 20px; letter-spacing: 0.01em; }
+.subtitle { color: var(--fg-dim); font-size: 12px; font-family: var(--mono); }
+.clock { margin-left: auto; color: var(--fg-dim); font-size: 15px; }
+
+.chain { display: flex; list-style: none; margin: 0; padding: 0; gap: 0; flex-wrap: wrap; }
+.link { display: grid; grid-template-columns: auto auto; column-gap: 7px; align-items: center;
+        padding: 4px 14px 4px 12px; position: relative; }
+.link + .link::before { content: ""; position: absolute; left: -4px; top: 50%; width: 8px; height: 1px;
+                        background: var(--fg-faint); }
+.link .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-dim); grid-row: span 2; }
+.link-label { font-size: 12px; color: var(--fg); font-weight: 600; }
+.link-detail { font-size: 11px; color: var(--fg-dim); grid-column: 2; }
+.link.unknown .dot { background: transparent; border: 1px dashed var(--fg-faint); }
+.link.unknown .link-label { color: var(--fg-dim); }
+.link.fault { background: var(--alarm-bg); border-radius: var(--radius); }
+.link.fault .dot { background: var(--alarm); box-shadow: 0 0 0 3px rgba(229, 72, 77, 0.25); }
+.link.fault .link-detail { color: var(--alarm); }
+
+.banner { margin-top: 14px; padding: 10px 14px; border-radius: var(--radius); background: var(--warn-bg);
+          color: var(--warn); border: 1px solid #5a4723; }
+
+/* ---------- ölçüm kutuları ---------- */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 16px 0; }
+.kpi { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
+.kpi-label { font-size: 12px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: 0.06em;
+             display: flex; align-items: center; gap: 8px; }
+.kpi-value { font-size: 30px; line-height: 1.15; margin-top: 4px; }
+.kpi-value small { font-size: 13px; color: var(--fg-dim); margin-left: 5px; font-family: var(--sans); }
+.kpi-note { font-size: 11.5px; color: var(--fg-faint); margin-top: 2px; }
+.kpi.stale .kpi-value { color: var(--fg-faint); }
+.kpi.stale .kpi-number { text-decoration: line-through; text-decoration-thickness: 1px; }
+.kpi.alarm { border-color: var(--alarm); background: var(--alarm-bg); }
+.kpi.alarm .kpi-value { color: #ff9a9d; }
+.badge { font-size: 10px; letter-spacing: 0.08em; padding: 1px 6px; border-radius: 3px;
+         background: var(--warn-bg); color: var(--warn); font-weight: 700; }
+.badge.alarm { background: var(--alarm); color: #fff; }
+
+/* ---------- ana ızgara ---------- */
+.main-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+@media (max-width: 980px) { .main-grid { grid-template-columns: minmax(0, 1fr); } }
+.trends { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.side { display: flex; flex-direction: column; gap: 12px; }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
+.panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+              flex-wrap: wrap; margin-bottom: 8px; }
+.panel-head h3 { font-size: 13px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+.hint { color: var(--fg-dim); font-size: 12.5px; margin: 4px 0; }
+.hint.warn { color: var(--warn); }
+
+.range { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.range button { background: transparent; border: 1px solid var(--line); color: var(--fg-dim);
+                padding: 4px 12px; border-radius: 4px; cursor: pointer; }
+.range button.active { background: var(--panel-2); color: var(--fg); border-color: var(--fg-faint); }
+
+/* ---------- grafik ---------- */
+.chart-wrap { width: 100%; overflow: hidden; }
+.chart-wrap svg { display: block; }
+.grid { stroke: var(--grid); stroke-width: 1; }
+.tick { fill: var(--fg-faint); font: 10.5px var(--mono); }
+.threshold { stroke: var(--alarm); stroke-width: 1; stroke-dasharray: 5 4; opacity: 0.8; }
+.threshold-label { fill: var(--alarm); font: 10.5px var(--mono); opacity: 0.9; }
+.crosshair { stroke: var(--fg-faint); stroke-width: 1; }
+.empty { fill: var(--fg-faint); font-size: 12px; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--fg-dim); }
+.legend-item { display: inline-flex; align-items: baseline; gap: 5px; }
+.legend-item i { width: 10px; height: 2px; display: inline-block; transform: translateY(-3px); }
+.legend-item b { color: var(--fg); font-weight: 500; }
+.legend-time { color: var(--fg-faint); }
+
+/* ---------- kontrol ---------- */
+.control-row { display: flex; justify-content: space-between; align-items: center; gap: 12px;
+               padding: 10px 0; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.control-row:first-of-type { border-top: 0; }
+.control-label { font-size: 12px; color: var(--fg-dim); display: block; }
+.relay-state { font: 600 15px var(--mono); letter-spacing: 0.04em; color: var(--fg-dim); }
+.relay-state.on { color: var(--fg); }
+.current-limit { font-size: 13px; color: var(--fg); }
+.btn-group { display: flex; gap: 6px; }
+.controls button { background: var(--panel-2); color: var(--fg); border: 1px solid var(--fg-faint);
+                   padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+.controls button:hover:not(:disabled) { border-color: var(--accent); }
+.controls button:disabled { opacity: 0.4; cursor: not-allowed; }
+.controls input { width: 72px; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+                  border-radius: 4px; padding: 6px 8px; font-family: var(--mono); }
+.cmd-status { min-height: 20px; font-size: 12.5px; padding-top: 4px; }
+.cmd-status .pending { color: var(--fg-dim); }
+.cmd-status .ok { color: var(--fg); }
+.cmd-status .fail { color: var(--warn); }
+
+/* ---------- gateway sağlığı ---------- */
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; margin: 0; font-size: 13px; }
+.kv dt { color: var(--fg-dim); }
+.kv dd { margin: 0; text-align: right; }
+.kv dd.warn { color: var(--warn); }
+.health.stale .kv dd { color: var(--fg-faint); }
+
+/* ---------- olay günlüğü ---------- */
+.log ul { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; font-size: 12.5px; }
+.log li { display: grid; grid-template-columns: auto 1fr; gap: 10px; padding: 4px 0; border-top: 1px solid var(--grid); }
+.log li:first-child { border-top: 0; }
+.log time { color: var(--fg-faint); font-size: 11.5px; }
+.log li.warn span { color: var(--warn); }
+.log li.alarm span { color: var(--alarm); }
+.empty { paint-order: stroke; stroke: var(--panel); stroke-width: 8px; stroke-linejoin: round; }
