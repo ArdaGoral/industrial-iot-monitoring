@@ -131,7 +131,18 @@ python3 -m venv .venv && source .venv/bin/activate && pip install -r requirement
 docker compose up -d --build
 ```
 
-Sonra ayrı terminallerde, bu sırayla:
+En kolayı kontrol panelini açmak:
+
+```bash
+python tools/launcher.py        # http://localhost:9000 açılır
+```
+
+Panelde "Hepsini başlat" her şeyi doğru sırayla açıyor; tek tek başlatıp durdurmak, logları izlemek,
+arıza senaryolarını seçmek, sensörü koparmak ya da PLC'yi dondurmak da oradan yapılıyor. Gateway'i
+panelden ilk kez çalıştırmadan önce bir kez terminalden `idf.py qemu` çalıştırmak gerekiyor
+(QEMU'nun flash ve efuse dosyalarını o oluşturuyor).
+
+Panel olmadan, ayrı terminallerde bu sırayla:
 
 ```bash
 cd firmware/bluepill_rtos && renode --console rtos.resc        # PLC

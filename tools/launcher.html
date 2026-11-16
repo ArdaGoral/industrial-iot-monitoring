@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kontrol Paneli · Motor 1</title>
+<style>
+  /* Dashboard ile aynı görsel dil: normal durum gri, renk sadece sorunda */
+  :root {
+    --bg: #1b1d20; --panel: #23262a; --panel-2: #2a2e33; --line: #363b41; --grid: #2f3439;
+    --fg: #d7dade; --fg-dim: #8b9198; --fg-faint: #5d636a;
+    --alarm: #e5484d; --alarm-bg: #3b1d1f; --warn: #e0a33a; --warn-bg: #3a2f1a; --accent: #8fb4d9;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--sans); }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 18px max(16px, env(safe-area-inset-left)) 40px; }
+  h1 { font-size: 19px; margin: 0; font-weight: 600; }
+  h2 { font-size: 12px; margin: 0 0 10px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: .07em; font-weight: 600; }
+  .mono { font-family: var(--mono); }
+  button { font: inherit; background: var(--panel-2); color: var(--fg); border: 1px solid var(--fg-faint);
+           padding: 5px 12px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary { background: #33404d; border-color: var(--accent); }
+  button.active { border-color: var(--fg); background: #3a3f45; }
+  a { color: var(--accent); }
+
+  header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+  .sub { color: var(--fg-dim); font: 12px var(--mono); }
+  .top-actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+  .job { margin-top: 12px; min-height: 20px; font-size: 13px; color: var(--fg-dim); }
+  .job.err { color: var(--warn); }
+  .job .spin { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--fg-faint); border-top-color: var(--fg);
+               border-radius: 50%; animation: spin .8s linear infinite; margin-right: 6px; vertical-align: -1px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; margin-top: 8px; }
+  @media (max-width: 960px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; }
+
+  .comp { display: grid; grid-template-columns: 140px minmax(0, 1fr) auto; gap: 6px 14px; align-items: center;
+          padding: 11px 0; border-top: 1px solid var(--grid); }
+  .comp:first-of-type { border-top: 0; }
+  .comp.sel .name { text-decoration: underline; text-underline-offset: 4px; }
+  .state { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--fg-dim); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: transparent; border: 1px dashed var(--fg-faint); flex: none; }
+  .s-running .dot { background: var(--fg-dim); border: 0; }
+  .s-running .state { color: var(--fg); }
+  .s-starting .dot { border: 2px solid var(--fg-faint); border-top-color: var(--fg); animation: spin .8s linear infinite; }
+  .s-error .dot, .s-exited .dot { background: var(--alarm); border: 0; box-shadow: 0 0 0 3px rgba(229,72,77,.25); }
+  .s-error .state, .s-exited .state { color: var(--alarm); }
+  .s-paused .dot { background: var(--warn); border: 0; }
+  .s-paused .state { color: var(--warn); }
+  .info { min-width: 0; }
+  .name { font-weight: 600; cursor: pointer; }
+  .desc { color: var(--fg-dim); font-size: 12px; }
+  .last { font: 11.5px var(--mono); color: var(--fg-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .note { font-size: 12px; color: var(--warn); margin-top: 2px; }
+  .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .pills { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .pill { font: 11px var(--mono); padding: 1px 7px; border-radius: 3px; border: 1px solid var(--line); color: var(--fg-dim); }
+  .pill.bad { border-color: var(--alarm); color: var(--alarm); }
+  @media (max-width: 640px) {
+    .comp { grid-template-columns: minmax(0, 1fr); }
+    .acts { justify-content: flex-start; }
+  }
+
+  .side { display: flex; flex-direction: column; gap: 16px; }
+  .btn-col { display: flex; flex-direction: column; gap: 6px; }
+  .btn-col button { text-align: left; }
+  .hint { color: var(--fg-faint); font-size: 12px; margin: 8px 0 0; }
+  .links a { display: block; padding: 3px 0; font-size: 13px; }
+
+  .logs { margin-top: 16px; }
+  .tabs { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+  .tabs .grow { flex: 1; }
+  .tabs label { font-size: 12px; color: var(--fg-dim); display: flex; gap: 6px; align-items: center; }
+  pre { margin: 0; height: 360px; overflow: auto; background: #141618; border: 1px solid var(--line); border-radius: 4px;
+        padding: 10px 12px; font: 12px/1.5 var(--mono); color: #c3c7cc; white-space: pre-wrap; word-break: break-word; }
+  pre .t { color: var(--fg-faint); }
+  pre .p { color: var(--accent); }
+  pre .e { color: #ff8a8d; }
+  pre .w { color: var(--warn); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Kontrol paneli</h1>
+      <div class="sub">industrial-iot-monitoring · bütün sistemi buradan başlat, durdur, izle</div>
+    </div>
+    <div class="top-actions">
+      <button class="primary" id="startAll">Hepsini başlat</button>
+      <button id="stopAll">Hepsini durdur</button>
+      <button id="cleanup" title="Kapanan terminallerden kalan Renode/QEMU/Vite/sensör süreçlerini öldürür">Artıkları temizle</button>
+    </div>
+  </header>
+  <div class="job" id="job"></div>
+
+  <div class="grid">
+    <section class="panel">
+      <h2>Bileşenler</h2>
+      <div id="comps"></div>
+    </section>
+
+    <aside class="side">
+      <section class="panel">
+        <h2>Senaryo</h2>
+        <div class="btn-col" id="scenarios"></div>
+        <p class="hint">Sensör modülünü seçilen modda yeniden başlatır. Arıza şiddeti 0'dan başlayıp yavaşça artar,
+          motor sıcaklığı kaldığı yerden devam eder.</p>
+      </section>
+      <section class="panel">
+        <h2>Arıza testi</h2>
+        <div class="btn-col">
+          <button id="sensorToggle">Sensörü kopar</button>
+          <button id="plcToggle">PLC'yi dondur</button>
+        </div>
+        <p class="hint">Sensör kopunca değerler bayat görünür; PLC donunca gateway onu "kopuk" bildirir.</p>
+      </section>
+      <section class="panel links">
+        <h2>Bağlantılar</h2>
+        <a href="http://localhost:5173" target="_blank" rel="noopener">Dashboard · localhost:5173</a>
+        <a href="http://localhost:8000/docs" target="_blank" rel="noopener">API belgeleri · localhost:8000/docs</a>
+        <a href="http://localhost:8086" target="_blank" rel="noopener">InfluxDB · localhost:8086</a>
+      </section>
+    </aside>
+  </div>
+
+  <section class="panel logs">
+    <div class="tabs" id="tabs">
+      <span class="grow"></span>
+      <label><input type="checkbox" id="follow" checked> sona kaydır</label>
+      <button id="clear">Ekranı temizle</button>
+    </div>
+    <pre id="log" aria-live="off"></pre>
+  </section>
+</div>
+
+<script>
+const STATE_TR = { stopped: "Durdu", starting: "Başlıyor", running: "Çalışıyor", exited: "Kapandı", error: "Hata" };
+const BUILD = { plc: "Derle", gateway: "Derle", dashboard: "npm install" };
+let last = null;            // son durum
+let selected = "plc";       // log sekmesi
+let seq = {};               // bileşen başına son okunan log satırı
+let busyLocal = false;
+
+const $ = (id) => document.getElementById(id);
+
+async function post(path) {
+  try {
+    const r = await fetch(path, { method: "POST" });
+    const j = await r.json();
+    if (j.busy) flash("Başka bir iş sürüyor, bitmesini bekle.");
+    else if (j.error) flash(j.error);
+  } catch (e) { flash("Panel sunucusuna ulaşılamıyor"); }
+  refresh();
+}
+
+let flashTimer;
+function flash(msg) {
+  const el = $("job");
+  el.className = "job err"; el.textContent = msg;
+  clearTimeout(flashTimer); flashTimer = setTimeout(() => (flashTimer = null), 4000);
+}
+
+function fmtUp(s) {
+  if (s == null) return "";
+  if (s < 60) return s + " sn";
+  if (s < 3600) return Math.floor(s / 60) + " dk " + (s % 60) + " sn";
+  return Math.floor(s / 3600) + " sa " + Math.floor((s % 3600) / 60) + " dk";
+}
+
+function esc(t) { return t.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+
+function renderComps(st) {
+  const busy = st.job.running;
+  $("comps").innerHTML = st.components.map((c) => {
+    const alive = c.state === "running" || c.state === "starting";
+    const cls = c.paused ? "s-paused" : "s-" + c.state;
+    let label = STATE_TR[c.state] || c.state;
+    if (c.state === "running" && !c.ready) label = "Başlıyor";
+    if (c.paused) label = "Donduruldu";
+    if (c.id === "sensor" && alive && st.scenarios[c.scenario]) label += " · " + st.scenarios[c.scenario];
+    const pills = c.services ? `<div class="pills">${Object.entries(c.services).map(([n, s]) =>
+        `<span class="pill ${s === "running" ? "" : "bad"}">${esc(n)}: ${esc(s)}</span>`).join("")}</div>` : "";
+    const acts = [];
+    if (alive) acts.push(`<button data-a="stop" data-c="${c.id}" ${busy && c.id === "docker" ? "disabled" : ""}>Durdur</button>`);
+    else acts.push(`<button data-a="start" data-c="${c.id}" ${busy ? "disabled" : ""}>Başlat</button>`);
+    if (alive && c.id !== "docker") acts.push(`<button data-a="restart" data-c="${c.id}" ${busy ? "disabled" : ""}>Yeniden</button>`);
+    if (BUILD[c.id]) acts.push(`<button data-a="build" data-c="${c.id}" ${busy || alive ? "disabled" : ""}
+        title="${alive ? "Önce durdur" : ""}">${BUILD[c.id]}</button>`);
+    acts.push(`<button data-log="${c.id}" class="${selected === c.id ? "active" : ""}">Loglar</button>`);
+    return `<div class="comp ${cls} ${selected === c.id ? "sel" : ""}">
+      <div class="state"><span class="dot"></span><span>${label}${c.uptime != null ? `<br><span class="mono" style="color:var(--fg-faint)">${fmtUp(c.uptime)}</span>` : ""}</span></div>
+      <div class="info">
+        <div class="name" data-log="${c.id}">${esc(c.name)}</div>
+        <div class="desc">${esc(c.desc)}</div>
+        ${c.note ? `<div class="note">${esc(c.note)}</div>` : ""}
+        ${pills}
+        ${c.last ? `<div class="last">${esc(c.last)}</div>` : ""}
+      </div>
+      <div class="acts">${acts.join("")}</div>
+    </div>`;
+  }).join("");
+}
+
+function renderSide(st) {
+  const sensor = st.components.find((c) => c.id === "sensor");
+  const plc = st.components.find((c) => c.id === "plc");
+  const sensorAlive = sensor.state === "running" || sensor.state === "starting";
+  const busy = st.job.running;
+  $("scenarios").innerHTML = Object.entries(st.scenarios).map(([k, t]) =>
+    `<button data-scn="${k}" class="${sensorAlive && sensor.scenario === k ? "active" : ""}"
+       ${busy || !plc.ready ? "disabled" : ""}>${esc(t)}</button>`).join("");
+  $("sensorToggle").textContent = sensorAlive ? "Sensörü kopar" : "Sensörü bağla";
+  $("sensorToggle").disabled = busy || !plc.ready;
+  $("plcToggle").textContent = plc.paused ? "PLC'yi devam ettir" : "PLC'yi dondur";
+  $("plcToggle").disabled = !plc.ready;
+  $("startAll").disabled = $("stopAll").disabled = $("cleanup").disabled = busy;
+}
+
+function renderJob(st) {
+  if (flashTimer) return;
+  const j = st.job, el = $("job");
+  if (j.running) { el.className = "job"; el.innerHTML = `<span class="spin"></span>${esc(j.name)}${j.step ? " · " + esc(j.step) : ""}`; }
+  else if (j.error) { el.className = "job err"; el.textContent = `${j.name}: ${j.error}`; }
+  else if (j.name) { el.className = "job"; el.textContent = `${j.name}: ${j.step || "tamam"}`; }
+  else { el.className = "job"; el.textContent = ""; }
+}
+
+function renderTabs(st) {
+  const tabs = $("tabs");
+  const existing = tabs.querySelectorAll("button[data-log]");
+  if (existing.length !== st.components.length) {
+    st.components.slice().reverse().forEach((c) => {
+      const b = document.createElement("button");
+      b.dataset.log = c.id; b.textContent = c.name;
+      tabs.prepend(b);
+    });
+  }
+  tabs.querySelectorAll("button[data-log]").forEach((b) => b.classList.toggle("active", b.dataset.log === selected));
+}
+
+async function refresh() {
+  try {
+    const st = await (await fetch("/api/status")).json();
+    last = st;
+    renderComps(st); renderSide(st); renderJob(st); renderTabs(st);
+  } catch (e) {
+    $("job").className = "job err";
+    $("job").textContent = "Panel sunucusu kapalı. Terminalde: python tools/launcher.py";
+  }
+}
+
+function cls(line) {
+  if (line.startsWith("[panel]") || line.startsWith("[derle]")) return "p";
+  if (/\b(E \(|ERROR|error|HATA|Traceback|failed)\b/.test(line)) return "e";
+  if (/\b(W \(|WARNING|warn|!!)\b/.test(line)) return "w";
+  return "";
+}
+
+async function pollLogs() {
+  const c = selected;
+  try {
+    const r = await (await fetch(`/api/logs?c=${c}&since=${seq[c] || 0}`)).json();
+    if (c !== selected || !r.lines.length) return;
+    const pre = $("log");
+    const html = r.lines.map(([n, t, txt]) => `<span class="t">${t}</span> <span class="${cls(txt)}">${esc(txt)}</span>`).join("\n");
+    pre.insertAdjacentHTML("beforeend", (pre.childElementCount ? "\n" : "") + html);
+    seq[c] = r.lines[r.lines.length - 1][0];
+    // Ekranda çok satır birikmesin
+    while (pre.childElementCount > 3000) { pre.removeChild(pre.firstChild); }
+    if ($("follow").checked) pre.scrollTop = pre.scrollHeight;
+  } catch (e) { /* sunucu kapalıysa refresh() zaten gösteriyor */ }
+}
+
+function selectLog(c) {
+  if (c === selected) return;
+  selected = c; seq[c] = 0; $("log").textContent = "";
+  if (last) { renderComps(last); renderTabs(last); }
+  pollLogs();
+}
+
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-a],[data-log],[data-scn]");
+  if (!b || b.disabled) return;
+  if (b.dataset.log) return selectLog(b.dataset.log);
+  if (b.dataset.scn) { selectLog("sensor"); return post(`/api/scenario/${b.dataset.scn}`); }
+  const { a, c } = b.dataset;
+  if (a === "build" || a === "start" || a === "restart") selectLog(c);
+  post(`/api/${c}/${a}`);
+});
+$("startAll").onclick = () => post("/api/all/start");
+$("stopAll").onclick = () => post("/api/all/stop");
+$("cleanup").onclick = () => post("/api/all/cleanup");
+$("clear").onclick = () => { $("log").textContent = ""; };
+$("sensorToggle").onclick = () => {
+  const s = last && last.components.find((c) => c.id === "sensor");
+  const alive = s && (s.state === "running" || s.state === "starting");
+  post(alive ? "/api/sensor/stop" : "/api/sensor/start");
+};
+$("plcToggle").onclick = () => {
+  const p = last && last.components.find((c) => c.id === "plc");
+  post(p && p.paused ? "/api/plc/resume" : "/api/plc/pause");
+};
+
+refresh(); pollLogs();
+setInterval(refresh, 1000);
+setInterval(pollLogs, 700);
+</script>
+</body>
+</html>
