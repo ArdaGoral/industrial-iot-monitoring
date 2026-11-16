@@ -251,6 +251,11 @@ class Plc(Managed):
             return "Renode bulunamadı (/Applications/Renode.app)"
         if not PLC_ELF.exists():
             return "PLC firmware'i derlenmemiş: 'Derle' butonuna bas"
+        # Eski bir Renode portları tutuyorsa yenisi açılışta çöküyor (çıkış kodu -6)
+        for port in (self.MONITOR_PORT, 3456):
+            if port_in_use(port):
+                return (f"{port} portu dolu, eski bir Renode açık kalmış olabilir: "
+                        "'Artıkları temizle'ye bas")
 
     MONITOR_PORT = 33334
 
@@ -690,10 +695,38 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"error": "bilinmeyen işlem"}, 400)
 
 
+_shutting_down = threading.Event()
+
+
+def _say(text):
+    # Terminal penceresi kapatıldıysa ekrana yazmak hata verir; durdurmayı engellemesin
+    try:
+        print(text, flush=True)
+    except OSError:
+        pass
+
+
 def shutdown(*_):
-    print("\nPanel kapanıyor, başlattığı süreçler durduruluyor...")
-    for c in MANAGED.values():
-        c.stop()
+    """Panel kapanırken (Ctrl+C, terminal penceresini kapatma, kill) başlattığı her şeyi
+    durdurur. Süreçler ayrı oturumda çalıştığı için bunu yapmazsak arkada açık kalıyorlar."""
+    if _shutting_down.is_set():          # ikinci Ctrl+C: beklemeden çık
+        os._exit(1)
+    _shutting_down.set()
+    _say("\nPanel kapanıyor, başlattığı her şey durduruluyor (birkaç saniye sürebilir)...")
+    # Hepsini aynı anda durdur; sırayla yapınca bileşen başına 9 sn'ye kadar sürebiliyor
+    def stop(c):
+        try:
+            c.stop()
+        except Exception as e:
+            _say(f"{c.name} durdurulamadı: {e}")
+
+    comps = [c for c in ALL.values() if c is not docker or DOCKER]
+    threads = [threading.Thread(target=stop, args=(c,), daemon=True) for c in comps]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(20)
+    _say("Durduruldu.")
     os._exit(0)
 
 
@@ -705,8 +738,9 @@ def main():
                               ("npm", NPM), ("docker", DOCKER), ("ESP-IDF", IDF_ACTIVATE)) if not p]
     if missing:
         print("Bulunamayan araçlar:", ", ".join(missing), "(ilgili butonlar hata verecek)")
-    signal.signal(signal.SIGINT, shutdown)
-    signal.signal(signal.SIGTERM, shutdown)
+    # SIGINT: Ctrl+C, SIGTERM: kill, SIGHUP: terminal penceresi kapatıldı
+    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, shutdown)
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     print(f"Kontrol paneli: http://localhost:{PORT}   (kapatmak için Ctrl+C)")
     if "--no-browser" not in sys.argv:
