@@ -191,3 +191,7 @@ Modbus testi de yapılabilir (gateway kapalı olmalı, port tek bağlantı kabul
 - MQTT anonim ve şifresiz, InfluxDB token'ı varsayılan değerde. Sadece yerel geliştirme için.
 - Tek motor var. Birden fazla motor için Modbus adresleri ve MQTT başlıkları genişletilmeli.
 - Dashboard henüz Docker'da değil, `npm run dev` ile çalışıyor.
+
+## Lisans
+
+MIT, ayrıntılar [`LICENSE`](LICENSE) dosyasında.
