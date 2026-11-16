@@ -33,6 +33,15 @@ export interface Heartbeat {
 
 export type LinkStatus = "online" | "offline" | "unknown";
 
+/** Backend'deki anomali modelinin her telemetri için verdiği sonuç */
+export interface Anomaly {
+  score: number;          // > 1 ise o pencere anormal
+  is_anomaly: boolean;    // art arda 3 pencere kuralıyla (debounce) alarm durumu
+  top_feature: string;    // normalden en çok sapan özellik
+  top_feature_tr: string;
+  top_z: number;          // o özelliğin kaç standart sapma uzakta olduğu
+}
+
 export interface CommandEvent {
   cmd?: string;
   topic?: string;
@@ -47,11 +56,12 @@ export interface Snapshot {
   gateway_status: LinkStatus;
   plc_status: LinkStatus;
   telemetry: Telemetry | null;
+  anomaly: Anomaly | null;
   heartbeat: Heartbeat | null;
   events: CommandEvent[];
 }
 
-export const NUMERIC_KEYS = ["vib_rms", "vib_peak", "kurtosis", "temp_c", "current_a"] as const;
+export const NUMERIC_KEYS = ["vib_rms", "vib_peak", "kurtosis", "temp_c", "current_a", "anomaly_score"] as const;
 export type NumericKey = (typeof NUMERIC_KEYS)[number];
 
 /** Grafik noktası: t = unix milisaniye */
@@ -100,6 +110,7 @@ async function fetchHistory(minutes: number): Promise<TrendPoint[]> {
     kurtosis: p.kurtosis,
     temp_c: p.temp_c,
     current_a: p.current_a,
+    anomaly_score: p.anomaly_score ?? null,
   }));
 }
 
@@ -112,6 +123,7 @@ const EMPTY: Snapshot = {
   gateway_status: "unknown",
   plc_status: "unknown",
   telemetry: null,
+  anomaly: null,
   heartbeat: null,
   events: [],
 };
@@ -210,6 +222,7 @@ export function useLiveData(rangeMinutes: number): LiveData {
               gateway_status: s.gateway_status,
               plc_status: s.plc_status,
               telemetry: s.telemetry,
+              anomaly: s.anomaly ?? null,
               heartbeat: s.heartbeat,
               events: s.events ?? [],
             });
@@ -220,7 +233,8 @@ export function useLiveData(rangeMinutes: number): LiveData {
           case "telemetry": {
             const d: Telemetry = msg.data;
             const t = Date.parse(msg.time);
-            setSnap((s) => ({ ...s, telemetry: d }));
+            const a: Anomaly | null = msg.anomaly ?? null;
+            setSnap((s) => ({ ...s, telemetry: d, anomaly: a }));
             setLastTelemetryAt(Date.now());
             // Sensör kopukken gelen değerler eski ölçümün tekrarı: grafiğe ekleme
             if (!d.sensor_online) break;
@@ -229,9 +243,17 @@ export function useLiveData(rangeMinutes: number): LiveData {
               const next = p.length && p[0].t < cutoff ? p.filter((x) => x.t >= cutoff) : p;
               return [...next, {
                 t, vib_rms: d.vib_rms, vib_peak: d.vib_peak, kurtosis: d.kurtosis,
-                temp_c: d.temp_c, current_a: d.current_a,
+                temp_c: d.temp_c, current_a: d.current_a, anomaly_score: a ? a.score : null,
               }];
             });
+            break;
+          }
+          case "anomaly": {
+            const e = msg.data;
+            const why = `${e.top_feature_tr} ${e.top_z > 0 ? "+" : ""}${e.top_z}σ`;
+            addLog(e.started ? "alarm" : "info",
+                   e.started ? `Anomali başladı (skor ${e.score.toFixed(1)}, baskın etken: ${why})`
+                             : "Anomali sona erdi, davranış normale döndü");
             break;
           }
           case "heartbeat":
@@ -257,7 +279,7 @@ export function useLiveData(rangeMinutes: number): LiveData {
       clearTimeout(timer);
       ws?.close();
     };
-  }, []);
+  }, [addLog]);
 
   const stale = lastTelemetryAt == null || now - lastTelemetryAt > STALE_AFTER_MS;
 

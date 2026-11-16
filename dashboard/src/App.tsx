@@ -117,6 +117,14 @@ export default function App() {
         <div className="clock num">{new Date(now).toLocaleTimeString("tr-TR")}</div>
       </header>
 
+      {snap.anomaly?.is_anomaly && !valuesStale && (
+        <div className="banner alarm">
+          <strong>Anomali:</strong> motorun davranışı öğrenilen normalden sapıyor. Baskın etken:{" "}
+          {snap.anomaly.top_feature_tr} (normalin {snap.anomaly.top_z > 0 ? "+" : ""}{snap.anomaly.top_z}σ{" "}
+          {snap.anomaly.top_z > 0 ? "üstünde" : "altında"}).
+        </div>
+      )}
+
       {valuesStale && t && (
         <div className="banner">
           {stale
@@ -126,6 +134,11 @@ export default function App() {
       )}
 
       <section className="kpis">
+        <Kpi label="Anomali skoru" value={snap.anomaly?.score} unit="" digits={2} stale={valuesStale}
+             alarm={snap.anomaly?.is_anomaly}
+             note={!snap.anomaly ? "model yok ya da veri yok"
+                   : snap.anomaly.score > 1 ? `baskın: ${snap.anomaly.top_feature_tr} (${snap.anomaly.top_z > 0 ? "+" : ""}${snap.anomaly.top_z}σ)`
+                   : "eşik 1.00 · normal davranış"} />
         <Kpi label="Sıcaklık" value={t?.temp_c} unit="°C" digits={1} stale={valuesStale}
              alarm={t?.temp_alarm} note={t ? `eşik ${t.temp_alarm_limit_c.toFixed(1)} °C` : undefined} />
         <Kpi label="Akım" value={t?.current_a} unit="A" digits={2} stale={valuesStale} />
@@ -147,6 +160,10 @@ export default function App() {
             {live.historyError && <span className="hint warn">Geçmiş alınamadı: {live.historyError}</span>}
           </div>
 
+          <TrendChart title="Anomali skoru" unit="" minSpan={2} clipMax={10} points={live.points}
+                      rangeMinutes={range} now={now}
+                      series={[{ key: "anomaly_score", label: "Skor", color: "var(--trend-1)", digits: 2 }]}
+                      threshold={{ value: 1, label: "eşik 1.0" }} />
           <TrendChart title="Sıcaklık" unit="°C" minSpan={10} points={live.points} rangeMinutes={range} now={now}
                       series={[{ key: "temp_c", label: "Sargı", color: "var(--trend-1)", digits: 2 }]}
                       threshold={t ? { value: t.temp_alarm_limit_c, label: `alarm ${t.temp_alarm_limit_c.toFixed(0)} °C` } : null} />

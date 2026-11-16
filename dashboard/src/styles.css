@@ -143,3 +143,5 @@ button, input { font: inherit; }
 .log li.warn span { color: var(--warn); }
 .log li.alarm span { color: var(--alarm); }
 .empty { paint-order: stroke; stroke: var(--panel); stroke-width: 8px; stroke-linejoin: round; }
+.banner.alarm { background: var(--alarm-bg); color: #ff9a9d; border-color: var(--alarm); }
+.banner strong { color: var(--alarm); }

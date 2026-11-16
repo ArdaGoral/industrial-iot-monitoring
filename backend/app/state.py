@@ -17,15 +17,16 @@ class SystemState:
         self._lock = threading.Lock()
         self.telemetry: dict | None = None
         self.telemetry_at: float | None = None      # backend'in aldığı zaman (unix sn)
+        self.anomaly: dict | None = None
         self.heartbeat: dict | None = None
         self.gateway_status: str = "unknown"
         self.plc_status: str = "unknown"
         self.mqtt_connected: bool = False
         self.events: deque = deque(maxlen=50)
 
-    def set_telemetry(self, data: dict, at: float):
+    def set_telemetry(self, data: dict, at: float, anomaly: dict | None = None):
         with self._lock:
-            self.telemetry, self.telemetry_at = data, at
+            self.telemetry, self.telemetry_at, self.anomaly = data, at, anomaly
 
     def set_heartbeat(self, data: dict):
         with self._lock:
@@ -52,6 +53,7 @@ class SystemState:
                 "telemetry_age_s": age,
                 # Hiç veri yoksa ya da son veri çok eskiyse bayat say
                 "telemetry_stale": age is None or age > config.STALE_AFTER_S,
+                "anomaly": self.anomaly,
                 "heartbeat": self.heartbeat,
                 "events": list(self.events)[:10],
             }

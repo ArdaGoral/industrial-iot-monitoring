@@ -1,0 +1,8 @@
+# Model eğitimi için (Mac'teki .venv'e kurulur).
+# scikit-learn sürümü backend/requirements.txt ile AYNI olmalı:
+# joblib ile kaydedilen model, farklı sürümde yüklenince bozulabilir.
+scikit-learn==1.9.1
+joblib>=1.4
+numpy>=2.0
+pandas>=2.2
+matplotlib>=3.9

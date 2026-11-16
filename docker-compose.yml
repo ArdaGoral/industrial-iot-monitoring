@@ -57,6 +57,11 @@ services:
       INFLUX_ORG: ${INFLUX_ORG:-factory}
       INFLUX_BUCKET: ${INFLUX_BUCKET:-telemetry}
       INFLUX_TOKEN: ${INFLUX_TOKEN:-dev-token-degistir}
+      MODEL_PATH: /srv/model/anomaly_model.joblib
+    volumes:
+      # Model image'a gömülmüyor, klasörden okunuyor: yeniden eğitince
+      # sadece "docker compose restart backend" yeterli, build gerekmez.
+      - ./ml/model:/srv/model:ro
     depends_on:
       mosquitto:
         condition: service_started

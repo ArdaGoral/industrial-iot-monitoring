@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 import paho.mqtt.client as mqtt
 
 from . import config
+from .anomaly import AnomalyDetector
 from .state import state
 from .storage import Storage
 from .telemetry import (InvalidMessage, parse_event, parse_heartbeat,
@@ -31,8 +32,10 @@ TOPIC_CMD = f"{T}/cmd"
 
 
 class MqttBridge:
-    def __init__(self, storage: Storage, loop: asyncio.AbstractEventLoop, outbox: asyncio.Queue):
+    def __init__(self, storage: Storage, loop: asyncio.AbstractEventLoop, outbox: asyncio.Queue,
+                 detector: AnomalyDetector):
         self.storage = storage
+        self.detector = detector
         self.loop = loop
         self.outbox = outbox            # WebSocket yayıncısının okuduğu kuyruk
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="iiot-backend")
@@ -89,9 +92,27 @@ class MqttBridge:
         try:
             if msg.topic == TOPIC_TELEMETRY:
                 data = parse_telemetry(msg.payload)
-                state.set_telemetry(data, now)
-                self.storage.write_telemetry(data, at)
-                self._emit({"type": "telemetry", "time": at.isoformat(), "data": data})
+                # Bayat değeri (sensör kopuk) skorlamak anlamsız: model eski bir ölçümü
+                # tekrar tekrar görüp "normal" ya da "anomali" demeye devam ederdi.
+                if data["sensor_online"]:
+                    anomaly = self.detector.score(data)
+                else:
+                    self.detector.reset()
+                    anomaly = None
+                state.set_telemetry(data, now, anomaly)
+                self.storage.write_telemetry(data, at, anomaly["score"] if anomaly else None)
+                self._emit({"type": "telemetry", "time": at.isoformat(), "data": data, "anomaly": anomaly})
+
+                if anomaly and anomaly["event"]:
+                    started = anomaly["event"] == "start"
+                    ev = {"time": at.isoformat(), "started": started, "score": anomaly["score"],
+                          "top_feature": anomaly["top_feature"], "top_feature_tr": anomaly["top_feature_tr"],
+                          "top_z": anomaly["top_z"]}
+                    self.storage.write_anomaly_event(ev, at)
+                    self._emit({"type": "anomaly", "data": ev})
+                    log.warning("Anomali %s: skor %.2f, baskin etken %s (z=%+.1f)",
+                                "BASLADI" if started else "bitti", anomaly["score"],
+                                anomaly["top_feature"], anomaly["top_z"])
 
             elif msg.topic == TOPIC_HEARTBEAT:
                 data = parse_heartbeat(msg.payload)

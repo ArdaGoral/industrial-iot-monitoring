@@ -1,0 +1,54 @@
+{
+  "features": [
+    "vib_rms",
+    "vib_peak",
+    "kurtosis",
+    "temp_c",
+    "current_a"
+  ],
+  "threshold": 1.0,
+  "if_threshold": 0.12270049471632156,
+  "z_threshold": 3.8789194152394972,
+  "debounce": 3,
+  "normal_mean": {
+    "vib_rms": 0.36395,
+    "vib_peak": 0.69813,
+    "kurtosis": 1.6626,
+    "temp_c": 54.98575,
+    "current_a": 5.00062
+  },
+  "normal_std": {
+    "vib_rms": 0.00056,
+    "vib_peak": 0.01724,
+    "kurtosis": 0.00463,
+    "temp_c": 0.33133,
+    "current_a": 0.09907
+  },
+  "sklearn_version": "1.9.1",
+  "trained_at": "2026-11-16T16:02:23+00:00",
+  "val_false_positive_raw": 0.004,
+  "val_false_positive_debounced": 0.0,
+  "degrade_detection": [
+    {
+      "mode": "bearing",
+      "ml_s": 7.5,
+      "ml_severity": 0.045,
+      "rule_s": null,
+      "rule_severity": null
+    },
+    {
+      "mode": "imbalance",
+      "ml_s": 1.5,
+      "ml_severity": 0.009,
+      "rule_s": null,
+      "rule_severity": null
+    },
+    {
+      "mode": "overheating",
+      "ml_s": 9.0,
+      "ml_severity": 0.054,
+      "rule_s": 59.0,
+      "rule_severity": 0.354
+    }
+  ]
+}

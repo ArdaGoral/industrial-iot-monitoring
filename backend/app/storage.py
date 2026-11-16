@@ -33,7 +33,7 @@ class Storage:
         except Exception as e:                      # DB geçici olarak yoksa backend çökmesin
             log.warning("InfluxDB yazma hatasi: %s", e)
 
-    def write_telemetry(self, data: dict, at: datetime):
+    def write_telemetry(self, data: dict, at: datetime, anomaly_score: float | None = None):
         p = Point("telemetry").tag("device", config.DEVICE).time(at, WritePrecision.MS)
         # Sensör kopukken PLC son okunan değeri tekrarlar. Bunlar yeni ölçüm değil;
         # kaydedersek grafikte sahte bir düz çizgi ve ML için sahte veri olur.
@@ -42,6 +42,14 @@ class Storage:
         for k, v in data.items():
             if k not in skip:
                 p = p.field(k, v)
+        if anomaly_score is not None:
+            p = p.field("anomaly_score", float(anomaly_score))
+        self._write(p)
+
+    def write_anomaly_event(self, ev: dict, at: datetime):
+        p = (Point("anomaly").tag("device", config.DEVICE).tag("top_feature", ev["top_feature"])
+             .field("started", ev["started"]).field("score", float(ev["score"]))
+             .field("top_z", float(ev["top_z"])).time(at, WritePrecision.MS))
         self._write(p)
 
     def write_heartbeat(self, data: dict, at: datetime):
@@ -71,7 +79,8 @@ class Storage:
         bölüp ortalama alıyoruz (downsampling): en fazla ~max_points satır döner.
         """
         window_s = max(1, (minutes * 60) // max_points)
-        field_filter = " or ".join(f'r._field == "{f}"' for f in NUMERIC_FIELDS)
+        fields = NUMERIC_FIELDS + ["anomaly_score"]
+        field_filter = " or ".join(f'r._field == "{f}"' for f in fields)
         flux = f'''
 from(bucket: "{config.INFLUX_BUCKET}")
   |> range(start: -{int(minutes)}m)
@@ -85,7 +94,7 @@ from(bucket: "{config.INFLUX_BUCKET}")
         for table in self.query_api.query(flux, org=config.INFLUX_ORG):
             for rec in table.records:
                 row = {"time": rec.get_time().astimezone(timezone.utc).isoformat()}
-                for f in NUMERIC_FIELDS:
+                for f in fields:
                     v = rec.values.get(f)
                     row[f] = None if v is None else round(float(v), 4)
                 rows.append(row)

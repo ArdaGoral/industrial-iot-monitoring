@@ -27,6 +27,9 @@ interface Props {
   /** Y ekseninin en az kapsayacağı aralık. Yoksa ölçümdeki küçük yuvarlama
    *  farkları (1.66 / 1.67) bütün grafiği kaplar ve gürültü arıza gibi görünür. */
   minSpan?: number;
+  /** Bu değerin üstü grafikte kırpılır (göstergede gerçek değer yazar).
+   *  Anomali skoru 100'e çıkabiliyor; kırpılmazsa eşik çizgisi dibe yapışır. */
+  clipMax?: number;
 }
 
 const H = 180;
@@ -47,7 +50,7 @@ const hhmm = (t: number, withSec: boolean) =>
     hour: "2-digit", minute: "2-digit", ...(withSec ? { second: "2-digit" } : {}),
   });
 
-export function TrendChart({ title, unit, series, points, rangeMinutes, now, threshold, minSpan = 0 }: Props) {
+export function TrendChart({ title, unit, series, points, rangeMinutes, now, threshold, minSpan = 0, clipMax = Infinity }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(600);
   const [hoverX, setHoverX] = useState<number | null>(null);
@@ -67,7 +70,7 @@ export function TrendChart({ title, unit, series, points, rangeMinutes, now, thr
   // Y aralığı: görünen veriler + eşik; biraz pay bırak
   const [y0, y1] = useMemo(() => {
     const vals: number[] = [];
-    for (const p of visible) for (const s of series) { const v = p[s.key]; if (v != null) vals.push(v); }
+    for (const p of visible) for (const s of series) { const v = p[s.key]; if (v != null) vals.push(Math.min(v, clipMax)); }
     if (threshold) vals.push(threshold.value);
     if (!vals.length) return [0, 1];
     let lo = Math.min(...vals), hi = Math.max(...vals);
@@ -78,7 +81,7 @@ export function TrendChart({ title, unit, series, points, rangeMinutes, now, thr
     const pad = (hi - lo) * 0.15 || Math.abs(hi) * 0.05 || 1;
     lo -= pad; hi += pad;
     return [lo, hi];
-  }, [visible, series, threshold, minSpan]);
+  }, [visible, series, threshold, minSpan, clipMax]);
 
   const iw = width - PAD.l - PAD.r;
   const ih = H - PAD.t - PAD.b;
@@ -92,8 +95,9 @@ export function TrendChart({ title, unit, series, points, rangeMinutes, now, thr
     let d = "";
     let prevT: number | null = null;
     for (const p of visible) {
-      const v = p[s.key];
-      if (v == null) { prevT = null; continue; }
+      const raw = p[s.key];
+      if (raw == null) { prevT = null; continue; }
+      const v = Math.min(raw, clipMax);
       const cmd = prevT == null || p.t - prevT > gapMs ? "M" : "L";
       d += `${cmd}${sx(p.t).toFixed(1)},${sy(v).toFixed(1)}`;
       prevT = p.t;

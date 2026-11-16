@@ -5,6 +5,7 @@ FastAPI uygulaması: dashboard'un konuştuğu tek kapı.
   GET  /api/state                   son bilinen durum (anlık görüntü)
   GET  /api/history?minutes=30      geçmiş telemetri (InfluxDB)
   GET  /api/events                  son komut olayları
+  GET  /api/model                   anomali modeli bilgisi
   POST /api/cmd/relay               {"on": true}
   POST /api/cmd/temp_alarm_limit    {"celsius": 65}
   WS   /ws                          canlı akış
@@ -20,6 +21,7 @@ from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnec
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from .anomaly import AnomalyDetector
 from .mqtt_bridge import MqttBridge
 from .state import state
 from .storage import Storage
@@ -57,7 +59,8 @@ async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
     outbox: asyncio.Queue = asyncio.Queue(maxsize=1000)
     app.state.storage = Storage()
-    app.state.bridge = MqttBridge(app.state.storage, loop, outbox)
+    app.state.detector = AnomalyDetector()
+    app.state.bridge = MqttBridge(app.state.storage, loop, outbox, app.state.detector)
     app.state.bridge.start()
     task = asyncio.create_task(hub.broadcast_forever(outbox))
     log.info("Backend basladi")
@@ -82,6 +85,7 @@ def health():
         "influxdb": app.state.storage.ping(),
         "mqtt_stats": app.state.bridge.stats,
         "websocket_clients": len(hub.clients),
+        "anomaly_model": app.state.detector.info,
     }
 
 
@@ -97,6 +101,11 @@ def get_history(minutes: int = Query(30, ge=1, le=1440, description="Kac dakika 
     except Exception as e:
         log.warning("Gecmis sorgusu basarisiz: %s", e)
         raise HTTPException(status_code=503, detail="Veritabanina ulasilamiyor")
+
+
+@app.get("/api/model")
+def get_model():
+    return app.state.detector.info
 
 
 @app.get("/api/events")
