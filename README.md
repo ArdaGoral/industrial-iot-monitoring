@@ -1,8 +1,8 @@
 # industrial-iot-monitoring
 
-Bitirme projem için yaptığım bir motor izleme sistemi. Bir elektrik motorundan gelen titreşim,
-sıcaklık ve akım verisini sahadaki bir PLC'den alıp bir gateway üzerinden sunucuya taşıyor,
-veritabanına yazıyor, bir anomali modeliyle değerlendiriyor ve web arayüzünde gösteriyor.
+Bir elektrik motorundan gelen titreşim, sıcaklık ve akım verisini sahadaki bir PLC'den 
+alıp bir gateway üzerinden sunucuya taşıyor,veritabanına yazıyor, bir anomali modeliyle
+değerlendiriyor ve web arayüzünde gösteriyor.
 Motor aşırı ısınırsa PLC röleyi kendisi düşürüp motoru durduruyor.
 
 Şu an elimde kart olmadığı için her şey emülatörde çalışıyor: STM32 tarafı Renode'da, ESP32
